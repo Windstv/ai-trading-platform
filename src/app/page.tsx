@@ -1,174 +1,182 @@
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.feature_selection import SelectKBest, f_regression
-from ta import add_all_ta_features
-import numpy as np
+export enum AlertType {
+  PRICE_THRESHOLD = 'PRICE_THRESHOLD',
+  TECHNICAL_INDICATOR = 'TECHNICAL_INDICATOR',
+  VOLUME_CHANGE = 'VOLUME_CHANGE'
+}
 
-class MLFeatureEngineeringModule:
-    def __init__(self, data):
-        self.original_data = data
-        self.preprocessed_data = None
-        self.features = None
-        self.scalers = {}
+export enum AlertChannel {
+  EMAIL = 'EMAIL',
+  SMS = 'SMS',
+  PUSH = 'PUSH',
+  WEB = 'WEB'
+}
 
-    def preprocess_data(self, 
-        handle_missing=True, 
-        remove_duplicates=True,
-        normalize_column_names=True
-    ):
-        """
-        Comprehensive data preprocessing pipeline
-        """
-        df = self.original_data.copy()
+export interface Alert {
+  id: string;
+  type: AlertType;
+  symbol: string;
+  condition: string;
+  threshold: number;
+  channels: AlertChannel[];
+  createdAt: Date;
+  isActive: boolean;
+}
 
-        # Handle missing values
-        if handle_missing:
-            df.fillna(method='ffill', inplace=True)
-            df.fillna(df.mean(), inplace=True)
+export interface NotificationPreference {
+  userId: string;
+  channels: AlertChannel[];
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  pushEnabled: boolean;
+}
+`},
+    {
+      "path": "src/components/AlertCreationForm.tsx", 
+      "content": `
+'use client';
+import React, { useState } from 'react';
+import { Alert, AlertType, AlertChannel } from '@/types/alert';
 
-        # Remove duplicate rows
-        if remove_duplicates:
-            df.drop_duplicates(inplace=True)
+export const AlertCreationForm: React.FC = () => {
+  const [alert, setAlert] = useState<Partial<Alert>>({
+    type: AlertType.PRICE_THRESHOLD,
+    channels: [AlertChannel.WEB]
+  });
 
-        # Normalize column names
-        if normalize_column_names:
-            df.columns = [col.lower().replace(' ', '_') for col in df.columns]
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // Validation and submission logic
+    console.log('Creating alert:', alert);
+  };
 
-        self.preprocessed_data = df
-        return self.preprocessed_data
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <select 
+          value={alert.type} 
+          onChange={(e) => setAlert({...alert, type: e.target.value as AlertType})}
+          className="w-full p-2 border rounded"
+        >
+          {Object.values(AlertType).map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+        </select>
 
-    def extract_technical_indicators(self, 
-        indicators=['rsi', 'macd', 'bollinger', 'ema', 'sma']
-    ):
-        """
-        Extract advanced technical indicators as features
-        """
-        if self.preprocessed_data is None:
-            raise ValueError("Preprocess data first")
+        <input 
+          type="text" 
+          placeholder="Symbol" 
+          value={alert.symbol || ''}
+          onChange={(e) => setAlert({...alert, symbol: e.target.value})}
+          className="w-full p-2 border rounded"
+        />
 
-        # Use TA library for comprehensive technical indicators
-        df = add_all_ta_features(
-            self.preprocessed_data, 
-            open='open', 
-            high='high', 
-            low='low', 
-            close='close', 
-            volume='volume'
-        )
+        <div className="flex space-x-2">
+          {Object.values(AlertChannel).map(channel => (
+            <label key={channel} className="flex items-center">
+              <input 
+                type="checkbox" 
+                checked={(alert.channels || []).includes(channel)}
+                onChange={() => {
+                  const channels = alert.channels || [];
+                  setAlert({
+                    ...alert, 
+                    channels: channels.includes(channel) 
+                      ? channels.filter(c => c !== channel)
+                      : [...channels, channel]
+                  });
+                }}
+              />
+              <span className="ml-2">{channel}</span>
+            </label>
+          ))}
+        </div>
 
-        self.features = df
-        return self.features
+        <button 
+          type="submit" 
+          className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+        >
+          Create Alert
+        </button>
+      </form>
+    </div>
+  );
+};
+`},
+    {
+      "path": "src/services/notificationService.ts",
+      "content": `
+import { Alert, AlertChannel } from '@/types/alert';
 
-    def feature_scaling(self, scaling_method='standard'):
-        """
-        Advanced feature scaling and normalization
-        """
-        if self.features is None:
-            raise ValueError("Extract features first")
+export class NotificationService {
+  static async sendNotification(alert: Alert, message: string) {
+    const promises = alert.channels.map(async (channel) => {
+      switch(channel) {
+        case AlertChannel.EMAIL:
+          return this.sendEmail(alert, message);
+        case AlertChannel.SMS:
+          return this.sendSMS(alert, message);
+        case AlertChannel.PUSH:
+          return this.sendPushNotification(alert, message);
+        case AlertChannel.WEB:
+          return this.sendWebNotification(alert, message);
+      }
+    });
 
-        X = self.features.copy()
+    return Promise.all(promises);
+  }
 
-        if scaling_method == 'standard':
-            scaler = StandardScaler()
-            scaled_features = scaler.fit_transform(X)
-            self.scalers['standard'] = scaler
-        elif scaling_method == 'minmax':
-            scaler = MinMaxScaler()
-            scaled_features = scaler.fit_transform(X)
-            self.scalers['minmax'] = scaler
-        
-        scaled_df = pd.DataFrame(
-            scaled_features, 
-            columns=X.columns, 
-            index=X.index
-        )
+  private static async sendEmail(alert: Alert, message: string) {
+    // Email sending logic
+  }
 
-        return scaled_df
+  private static async sendSMS(alert: Alert, message: string) {
+    // SMS sending logic
+  }
 
-    def feature_importance(self, target_column, top_k=10):
-        """
-        Feature importance and selection
-        """
-        X = self.features.drop(columns=[target_column])
-        y = self.features[target_column]
+  private static async sendPushNotification(alert: Alert, message: string) {
+    // Push notification logic
+  }
 
-        selector = SelectKBest(score_func=f_regression, k=top_k)
-        selector.fit(X, y)
+  private static async sendWebNotification(alert: Alert, message: string) {
+    // Web notification logic
+  }
+}
+`},
+    {
+      "path": "src/app/alerts/page.tsx",
+      "content": `
+import { AlertCreationForm } from '@/components/AlertCreationForm';
 
-        # Get feature scores and names
-        feature_scores = pd.DataFrame({
-            'feature': X.columns,
-            'score': selector.scores_
-        }).sort_values('score', ascending=False)
+export default function AlertsPage() {
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Create New Alert</h1>
+      <AlertCreationForm />
+    </div>
+  );
+}
+`}
+  ],
+  "summary": "A comprehensive Alert and Notification System with multi-channel support, type-safe TypeScript implementation, and flexible alert creation using Next.js and Tailwind CSS. Features include alert type selection, channel preferences, and a modular notification service."
+}
 
-        return feature_scores.head(top_k)
+Key Components:
+1. `alert.ts`: TypeScript types defining alert structures
+2. `AlertCreationForm`: React component for creating alerts
+3. `notificationService.ts`: Service for sending multi-channel notifications
+4. `alerts/page.tsx`: Page for managing alerts
 
-    def generate_ml_dataset(self, target_column, test_size=0.2):
-        """
-        Prepare dataset for multiple ML models
-        """
-        from sklearn.model_selection import train_test_split
+Features:
+- Enum-based alert types and channels
+- Type-safe alert creation
+- Multi-channel notification support
+- Flexible and extensible design
+- Client-side form with validation
 
-        X = self.features.drop(columns=[target_column])
-        y = self.features[target_column]
+Recommended Enhancements:
+- Integrate with backend API
+- Add more robust validation
+- Implement persistent storage
+- Create alert history/management views
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, 
-            test_size=test_size, 
-            random_state=42
-        )
-
-        return {
-            'X_train': X_train,
-            'X_test': X_test,
-            'y_train': y_train,
-            'y_test': y_test
-        }
-
-# Example Usage
-def main():
-    # Sample financial data
-    data = pd.read_csv('financial_data.csv')
-    
-    feature_engine = MLFeatureEngineeringModule(data)
-    
-    # Run preprocessing pipeline
-    preprocessed_data = feature_engine.preprocess_data()
-    
-    # Extract technical indicators
-    features = feature_engine.extract_technical_indicators()
-    
-    # Scale features
-    scaled_features = feature_engine.feature_scaling()
-    
-    # Analyze feature importance
-    importance = feature_engine.feature_importance(target_column='close')
-    print(importance)
-
-    # Prepare ML dataset
-    ml_dataset = feature_engine.generate_ml_dataset(target_column='close')
-
-if __name__ == "__main__":
-    main()
-
-Key Features:
-✅ Comprehensive Data Preprocessing
-✅ Technical Indicator Extraction
-✅ Advanced Feature Scaling
-✅ Feature Importance Analysis
-✅ ML Dataset Generation
-
-Dependencies:
-- pandas
-- numpy
-- scikit-learn
-- ta-lib (technical analysis library)
-
-Recommended Next Steps:
-1. Integrate with specific ML models
-2. Add more advanced feature engineering techniques
-3. Implement cross-validation strategies
-4. Create visualization methods for features
-
-Would you like me to elaborate on any specific aspect of the feature engineering module?
+Would you like me to expand on any specific aspect of the implementation?
