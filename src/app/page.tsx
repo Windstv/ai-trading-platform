@@ -1,134 +1,198 @@
-import numpy as np
+import tweepy
+import praw
 import pandas as pd
+import numpy as np
+from textblob import TextBlob
+from transformers import pipeline
 import yfinance as yf
-import scipy.stats as stats
+import matplotlib.pyplot as plt
+import schedule
+import time
 
-class RiskAnalyticsDashboard:
-    def __init__(self, symbols, start_date, end_date):
-        self.symbols = symbols
-        self.start_date = start_date
-        self.end_date = end_date
-        self.data = self._fetch_data()
+class MarketSentimentAnalyzer:
+    def __init__(self, cryptocurrencies, twitter_config, reddit_config):
+        # Twitter Authentication
+        self.twitter_client = tweepy.Client(
+            bearer_token=twitter_config['bearer_token']
+        )
 
-    def _fetch_data(self):
-        return yf.download(self.symbols, start=self.start_date, end=self.end_date)['Adj Close']
+        # Reddit Authentication 
+        self.reddit_client = praw.Reddit(
+            client_id=reddit_config['client_id'],
+            client_secret=reddit_config['client_secret'],
+            user_agent=reddit_config['user_agent']
+        )
 
-    def calculate_var(self, confidence_level=0.95, method='historical'):
-        """Calculate Value at Risk (VaR)"""
-        returns = self.data.pct_change().dropna()
+        # NLP Models
+        self.sentiment_model = pipeline('sentiment-analysis')
+        self.cryptocurrencies = cryptocurrencies
+        self.historical_sentiments = {}
+
+    def fetch_twitter_data(self, crypto_symbol):
+        """Fetch Twitter sentiment for cryptocurrency"""
+        tweets = self.twitter_client.search_recent_tweets(
+            query=f"{crypto_symbol} crypto", 
+            max_results=100
+        )
         
-        if method == 'historical':
-            var = np.percentile(returns, 100 * (1 - confidence_level))
-        elif method == 'parametric':
-            mu = returns.mean()
-            sigma = returns.std()
-            var = mu - sigma * stats.norm.ppf(confidence_level)
+        sentiments = []
+        for tweet in tweets.data:
+            blob = TextBlob(tweet.text)
+            sentiments.append(blob.sentiment.polarity)
         
-        return var
+        return np.mean(sentiments)
 
-    def max_drawdown(self):
-        """Calculate Maximum Drawdown"""
-        cumulative_returns = (1 + self.data.pct_change()).cumprod()
-        running_max = cumulative_returns.cummax()
-        drawdown = (cumulative_returns - running_max) / running_max
-        return drawdown.min()
+    def fetch_reddit_data(self, crypto_symbol):
+        """Fetch Reddit sentiment for cryptocurrency"""
+        subreddits = ['CryptoCurrency', 'Bitcoin', 'altcoin']
+        comments = []
 
-    def sharpe_ratio(self, risk_free_rate=0.02):
-        """Calculate Sharpe Ratio"""
-        returns = self.data.pct_change()
-        excess_returns = returns - (risk_free_rate / 252)
-        sharpe = excess_returns.mean() / excess_returns.std() * np.sqrt(252)
-        return sharpe
+        for subreddit_name in subreddits:
+            subreddit = self.reddit_client.subreddit(subreddit_name)
+            posts = subreddit.search(crypto_symbol, limit=50)
+            
+            for post in posts:
+                comments.extend(post.comments)
 
-    def historical_volatility(self, window=30):
-        """Calculate Historical Volatility"""
-        returns = self.data.pct_change()
-        volatility = returns.rolling(window=window).std() * np.sqrt(252)
-        return volatility
+        sentiments = [
+            self.sentiment_model(comment.body)[0]['score'] 
+            for comment in comments
+        ]
 
-    def risk_reward_metrics(self):
-        """Comprehensive Risk/Reward Analysis"""
-        var = self.calculate_var()
-        max_dd = self.max_drawdown()
-        sharpe = self.sharpe_ratio()
-        volatility = self.historical_volatility()
+        return np.mean(sentiments)
 
-        return {
-            'Value at Risk': var,
-            'Maximum Drawdown': max_dd,
-            'Sharpe Ratio': sharpe,
-            'Historical Volatility': volatility
-        }
+    def calculate_sentiment_score(self, crypto_symbol):
+        """Aggregate sentiment from multiple sources"""
+        twitter_sentiment = self.fetch_twitter_data(crypto_symbol)
+        reddit_sentiment = self.fetch_reddit_data(crypto_symbol)
 
-# Example Usage
-if __name__ == '__main__':
-    symbols = ['AAPL', 'GOOGL', 'MSFT']
-    start_date = '2022-01-01'
-    end_date = '2023-06-30'
+        # Weighted average of sentiments
+        sentiment_score = 0.6 * twitter_sentiment + 0.4 * reddit_sentiment
+        
+        return sentiment_score
 
-    dashboard = RiskAnalyticsDashboard(symbols, start_date, end_date)
-    metrics = dashboard.risk_reward_metrics()
-    print(metrics)"
-        },
-        {
-            "path": "src/visualization/risk_dashboard.py",
-            "content": "import matplotlib.pyplot as plt
-import seaborn as sns
+    def fetch_price_data(self, crypto_symbol):
+        """Retrieve cryptocurrency price data"""
+        ticker = yf.Ticker(crypto_symbol)
+        historical_data = ticker.history(period="1mo")
+        return historical_data['Close']
 
-def plot_risk_metrics(risk_metrics):
-    plt.figure(figsize=(12, 8))
-    
-    # Bar Plot for Risk Metrics
-    plt.subplot(2, 2, 1)
-    sns.barplot(x=list(risk_metrics.keys()), y=list(risk_metrics.values()))
-    plt.title('Risk Performance Metrics')
-    plt.xticks(rotation=45)
+    def analyze_market_correlation(self):
+        """Correlate sentiment with price movements"""
+        correlation_results = {}
 
-    # Volatility Trend
-    plt.subplot(2, 2, 2)
-    plt.plot(risk_metrics['Historical Volatility'])
-    plt.title('Historical Volatility Trend')
+        for crypto in self.cryptocurrencies:
+            sentiment_scores = []
+            price_data = self.fetch_price_data(crypto)
+            
+            for date in price_data.index:
+                sentiment = self.calculate_sentiment_score(crypto)
+                sentiment_scores.append(sentiment)
 
-    # Value at Risk Distribution
-    plt.subplot(2, 2, 3)
-    plt.hist(risk_metrics['Value at Risk'], bins=20)
-    plt.title('Value at Risk Distribution')
+            correlation = np.corrcoef(sentiment_scores, price_data)[0, 1]
+            correlation_results[crypto] = correlation
 
-    plt.tight_layout()
-    plt.show()"
-        },
-        {
-            "path": "requirements.txt",
-            "content": "yfinance==0.2.22\nnumpy==1.24.3\npandas==2.0.1\nmatplotlib==3.7.1\nseaborn==0.12.2\nscipy==1.10.1"
-        }
-    ],
-    "summary": "Advanced Risk Analytics Dashboard with comprehensive risk metrics calculation including Value at Risk (VaR), Maximum Drawdown, Sharpe Ratio, Historical Volatility, and Risk/Reward metric visualization. Supports multiple stocks and different calculation methods."
+        return correlation_results
+
+    def real_time_sentiment_tracking(self):
+        """Continuous sentiment monitoring"""
+        while True:
+            for crypto in self.cryptocurrencies:
+                current_sentiment = self.calculate_sentiment_score(crypto)
+                self.historical_sentiments.setdefault(crypto, []).append(current_sentiment)
+                
+                print(f"{crypto} Sentiment: {current_sentiment}")
+            
+            time.sleep(3600)  # Update every hour
+
+    def visualize_sentiment(self):
+        """Generate sentiment visualization"""
+        plt.figure(figsize=(12, 6))
+        for crypto, sentiments in self.historical_sentiments.items():
+            plt.plot(sentiments, label=crypto)
+        
+        plt.title("Cryptocurrency Sentiment Over Time")
+        plt.xlabel("Time")
+        plt.ylabel("Sentiment Score")
+        plt.legend()
+        plt.show()
+
+# Configuration
+TWITTER_CONFIG = {
+    'bearer_token': 'YOUR_TWITTER_BEARER_TOKEN'
 }
 
-Key Features:
-1. Multiple VaR calculation methods (historical, parametric)
-2. Maximum drawdown tracking
-3. Sharpe ratio computation
-4. Historical volatility analysis
-5. Comprehensive risk/reward metrics
-6. Visualization of risk metrics
+REDDIT_CONFIG = {
+    'client_id': 'YOUR_REDDIT_CLIENT_ID',
+    'client_secret': 'YOUR_REDDIT_CLIENT_SECRET', 
+    'user_agent': 'YOUR_USER_AGENT'
+}
+
+CRYPTOCURRENCIES = ['BTC-USD', 'ETH-USD', 'DOGE-USD']
+
+# Execution
+def main():
+    sentiment_analyzer = MarketSentimentAnalyzer(
+        CRYPTOCURRENCIES, 
+        TWITTER_CONFIG, 
+        REDDIT_CONFIG
+    )
+
+    # Correlation Analysis
+    correlations = sentiment_analyzer.analyze_market_correlation()
+    print("Market Sentiment Correlations:", correlations)
+
+    # Real-time Tracking
+    sentiment_analyzer.real_time_sentiment_tracking()
+
+if __name__ == "__main__":
+    main()
+
+Key Components:
+1. Multi-Source Sentiment Collection
+   - Twitter API Integration
+   - Reddit API Integration
+   - Advanced NLP processing
+
+2. Sentiment Scoring Mechanism
+   - TextBlob for basic sentiment
+   - Hugging Face Transformers for advanced analysis
+   - Weighted sentiment aggregation
+
+3. Price Movement Correlation
+   - Fetch historical cryptocurrency data
+   - Calculate sentiment-price correlations
+   - Statistical analysis
+
+4. Real-Time Monitoring
+   - Continuous sentiment tracking
+   - Hourly updates
+   - Historical sentiment storage
+
+5. Visualization
+   - Matplotlib sentiment trends
+   - Comparative cryptocurrency insights
+
+Requirements:
+tweepy
+praw
+pandas
+numpy
+textblob
+transformers
+yfinance
+matplotlib
+schedule
 
 Recommended Enhancements:
-- Add more sophisticated VaR methods
-- Implement machine learning-based risk prediction
-- Create interactive dashboard using Plotly/Dash
-- Add Monte Carlo simulation for risk scenarios
+- Add machine learning predictive models
+- Implement more sophisticated correlation techniques
+- Create web dashboard for real-time tracking
+- Expand to more cryptocurrency/social platforms
+- Add anomaly detection in sentiment shifts
 
-Usage Example:
-python
-symbols = ['AAPL', 'GOOGL', 'MSFT']
-start_date = '2022-01-01'
-end_date = '2023-06-30'
+Note: Replace placeholder API tokens with actual credentials.
 
-dashboard = RiskAnalyticsDashboard(symbols, start_date, end_date)
-metrics = dashboard.risk_reward_metrics()
-plot_risk_metrics(metrics)
-
-The implementation provides a flexible, extensible framework for risk analytics with both computational and visualization capabilities.
+The implementation provides a comprehensive framework for machine learning-driven market sentiment analysis with multiple data sources, advanced NLP, and correlation tracking.
 
 Would you like me to elaborate on any specific aspect of the implementation?
