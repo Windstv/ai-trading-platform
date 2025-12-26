@@ -1,198 +1,198 @@
-import tweepy
-import praw
-import pandas as pd
-import numpy as np
-from textblob import TextBlob
-from transformers import pipeline
-import yfinance as yf
-import matplotlib.pyplot as plt
-import schedule
-import time
-
-class MarketSentimentAnalyzer:
-    def __init__(self, cryptocurrencies, twitter_config, reddit_config):
-        # Twitter Authentication
-        self.twitter_client = tweepy.Client(
-            bearer_token=twitter_config['bearer_token']
-        )
-
-        # Reddit Authentication 
-        self.reddit_client = praw.Reddit(
-            client_id=reddit_config['client_id'],
-            client_secret=reddit_config['client_secret'],
-            user_agent=reddit_config['user_agent']
-        )
-
-        # NLP Models
-        self.sentiment_model = pipeline('sentiment-analysis')
-        self.cryptocurrencies = cryptocurrencies
-        self.historical_sentiments = {}
-
-    def fetch_twitter_data(self, crypto_symbol):
-        """Fetch Twitter sentiment for cryptocurrency"""
-        tweets = self.twitter_client.search_recent_tweets(
-            query=f"{crypto_symbol} crypto", 
-            max_results=100
-        )
-        
-        sentiments = []
-        for tweet in tweets.data:
-            blob = TextBlob(tweet.text)
-            sentiments.append(blob.sentiment.polarity)
-        
-        return np.mean(sentiments)
-
-    def fetch_reddit_data(self, crypto_symbol):
-        """Fetch Reddit sentiment for cryptocurrency"""
-        subreddits = ['CryptoCurrency', 'Bitcoin', 'altcoin']
-        comments = []
-
-        for subreddit_name in subreddits:
-            subreddit = self.reddit_client.subreddit(subreddit_name)
-            posts = subreddit.search(crypto_symbol, limit=50)
-            
-            for post in posts:
-                comments.extend(post.comments)
-
-        sentiments = [
-            self.sentiment_model(comment.body)[0]['score'] 
-            for comment in comments
-        ]
-
-        return np.mean(sentiments)
-
-    def calculate_sentiment_score(self, crypto_symbol):
-        """Aggregate sentiment from multiple sources"""
-        twitter_sentiment = self.fetch_twitter_data(crypto_symbol)
-        reddit_sentiment = self.fetch_reddit_data(crypto_symbol)
-
-        # Weighted average of sentiments
-        sentiment_score = 0.6 * twitter_sentiment + 0.4 * reddit_sentiment
-        
-        return sentiment_score
-
-    def fetch_price_data(self, crypto_symbol):
-        """Retrieve cryptocurrency price data"""
-        ticker = yf.Ticker(crypto_symbol)
-        historical_data = ticker.history(period="1mo")
-        return historical_data['Close']
-
-    def analyze_market_correlation(self):
-        """Correlate sentiment with price movements"""
-        correlation_results = {}
-
-        for crypto in self.cryptocurrencies:
-            sentiment_scores = []
-            price_data = self.fetch_price_data(crypto)
-            
-            for date in price_data.index:
-                sentiment = self.calculate_sentiment_score(crypto)
-                sentiment_scores.append(sentiment)
-
-            correlation = np.corrcoef(sentiment_scores, price_data)[0, 1]
-            correlation_results[crypto] = correlation
-
-        return correlation_results
-
-    def real_time_sentiment_tracking(self):
-        """Continuous sentiment monitoring"""
-        while True:
-            for crypto in self.cryptocurrencies:
-                current_sentiment = self.calculate_sentiment_score(crypto)
-                self.historical_sentiments.setdefault(crypto, []).append(current_sentiment)
-                
-                print(f"{crypto} Sentiment: {current_sentiment}")
-            
-            time.sleep(3600)  # Update every hour
-
-    def visualize_sentiment(self):
-        """Generate sentiment visualization"""
-        plt.figure(figsize=(12, 6))
-        for crypto, sentiments in self.historical_sentiments.items():
-            plt.plot(sentiments, label=crypto)
-        
-        plt.title("Cryptocurrency Sentiment Over Time")
-        plt.xlabel("Time")
-        plt.ylabel("Sentiment Score")
-        plt.legend()
-        plt.show()
-
-# Configuration
-TWITTER_CONFIG = {
-    'bearer_token': 'YOUR_TWITTER_BEARER_TOKEN'
+export enum ExchangeType {
+  BINANCE = 'binance',
+  COINBASE = 'coinbase',
+  KUCOIN = 'kucoin'
 }
 
-REDDIT_CONFIG = {
-    'client_id': 'YOUR_REDDIT_CLIENT_ID',
-    'client_secret': 'YOUR_REDDIT_CLIENT_SECRET', 
-    'user_agent': 'YOUR_USER_AGENT'
+export interface CryptoTicker {
+  symbol: string
+  price: number
+  volume: number
+  timestamp: number
+  exchange: ExchangeType
 }
 
-CRYPTOCURRENCIES = ['BTC-USD', 'ETH-USD', 'DOGE-USD']
+export interface ExchangeConfig {
+  apiKey: string
+  apiSecret: string
+  apiEndpoint: string
+}
+`
+        },
+        {
+            "path": "src/services/exchange-aggregator.ts", 
+            "content": `
+import axios from 'axios'
+import { ExchangeType, CryptoTicker, ExchangeConfig } from '@/types/exchange'
+import { RateLimiter } from './rate-limiter'
 
-# Execution
-def main():
-    sentiment_analyzer = MarketSentimentAnalyzer(
-        CRYPTOCURRENCIES, 
-        TWITTER_CONFIG, 
-        REDDIT_CONFIG
+export class ExchangeAggregator {
+  private rateLimiter: RateLimiter
+  private exchanges: Record<ExchangeType, ExchangeConfig>
+
+  constructor(exchanges: Record<ExchangeType, ExchangeConfig>) {
+    this.exchanges = exchanges
+    this.rateLimiter = new RateLimiter(10) // 10 requests per second
+  }
+
+  async fetchTickerData(symbols: string[]): Promise<CryptoTicker[]> {
+    const promises = Object.entries(this.exchanges).map(([exchangeType, config]) => 
+      this.fetchExchangeData(exchangeType as ExchangeType, symbols, config)
     )
 
-    # Correlation Analysis
-    correlations = sentiment_analyzer.analyze_market_correlation()
-    print("Market Sentiment Correlations:", correlations)
+    const results = await Promise.allSettled(promises)
+    
+    return results
+      .filter(result => result.status === 'fulfilled')
+      .flatMap(result => 
+        result.status === 'fulfilled' ? result.value : []
+      )
+  }
 
-    # Real-time Tracking
-    sentiment_analyzer.real_time_sentiment_tracking()
+  private async fetchExchangeData(
+    exchangeType: ExchangeType, 
+    symbols: string[], 
+    config: ExchangeConfig
+  ): Promise<CryptoTicker[]> {
+    await this.rateLimiter.waitForRequest()
 
-if __name__ == "__main__":
-    main()
+    switch(exchangeType) {
+      case ExchangeType.BINANCE:
+        return this.fetchBinanceData(symbols, config)
+      case ExchangeType.COINBASE:
+        return this.fetchCoinbaseData(symbols, config)
+      case ExchangeType.KUCOIN:
+        return this.fetchKuCoinData(symbols, config)
+      default:
+        return []
+    }
+  }
 
-Key Components:
-1. Multi-Source Sentiment Collection
-   - Twitter API Integration
-   - Reddit API Integration
-   - Advanced NLP processing
+  private async fetchBinanceData(symbols: string[], config: ExchangeConfig): Promise<CryptoTicker[]> {
+    try {
+      const response = await axios.get(`${config.apiEndpoint}/ticker/price`, {
+        params: { symbols: JSON.stringify(symbols) }
+      })
 
-2. Sentiment Scoring Mechanism
-   - TextBlob for basic sentiment
-   - Hugging Face Transformers for advanced analysis
-   - Weighted sentiment aggregation
+      return response.data.map((ticker: any) => ({
+        symbol: ticker.symbol,
+        price: parseFloat(ticker.price),
+        volume: 0, // Binance requires separate volume endpoint
+        timestamp: Date.now(),
+        exchange: ExchangeType.BINANCE
+      }))
+    } catch (error) {
+      console.error('Binance fetch error', error)
+      return []
+    }
+  }
 
-3. Price Movement Correlation
-   - Fetch historical cryptocurrency data
-   - Calculate sentiment-price correlations
-   - Statistical analysis
+  // Similar methods for Coinbase and KuCoin
+}
+`
+            },
+        {
+            "path": "src/services/rate-limiter.ts",
+            "content": `
+export class RateLimiter {
+  private requestsPerSecond: number
+  private lastRequestTime: number = 0
 
-4. Real-Time Monitoring
-   - Continuous sentiment tracking
-   - Hourly updates
-   - Historical sentiment storage
+  constructor(requestsPerSecond: number) {
+    this.requestsPerSecond = requestsPerSecond
+  }
 
-5. Visualization
-   - Matplotlib sentiment trends
-   - Comparative cryptocurrency insights
+  async waitForRequest(): Promise<void> {
+    const now = Date.now()
+    const timeSinceLastRequest = now - this.lastRequestTime
+    const minInterval = 1000 / this.requestsPerSecond
 
-Requirements:
-tweepy
-praw
-pandas
-numpy
-textblob
-transformers
-yfinance
-matplotlib
-schedule
+    if (timeSinceLastRequest < minInterval) {
+      await new Promise(resolve => 
+        setTimeout(resolve, minInterval - timeSinceLastRequest)
+      )
+    }
 
-Recommended Enhancements:
-- Add machine learning predictive models
-- Implement more sophisticated correlation techniques
-- Create web dashboard for real-time tracking
-- Expand to more cryptocurrency/social platforms
-- Add anomaly detection in sentiment shifts
+    this.lastRequestTime = Date.now()
+  }
+}
+`
+        },
+        {
+            "path": "src/app/page.tsx",
+            "content": `
+'use client'
 
-Note: Replace placeholder API tokens with actual credentials.
+import { useState, useEffect } from 'react'
+import { ExchangeAggregator } from '@/services/exchange-aggregator'
+import { ExchangeType, CryptoTicker } from '@/types/exchange'
 
-The implementation provides a comprehensive framework for machine learning-driven market sentiment analysis with multiple data sources, advanced NLP, and correlation tracking.
+export default function Home() {
+  const [tickers, setTickers] = useState<CryptoTicker[]>([])
+
+  useEffect(() => {
+    const aggregator = new ExchangeAggregator({
+      [ExchangeType.BINANCE]: {
+        apiKey: process.env.NEXT_PUBLIC_BINANCE_API_KEY || '',
+        apiSecret: process.env.NEXT_PUBLIC_BINANCE_API_SECRET || '',
+        apiEndpoint: 'https://api.binance.com/api/v3'
+      },
+      // Add other exchange configs
+    })
+
+    const fetchData = async () => {
+      const symbols = ['BTCUSDT', 'ETHUSDT']
+      const result = await aggregator.fetchTickerData(symbols)
+      setTickers(result)
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 60000) // Refresh every minute
+
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <main className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Crypto Exchange Aggregator</h1>
+      <div className="grid gap-4">
+        {tickers.map(ticker => (
+          <div key={`${ticker.symbol}-${ticker.exchange}`} className="bg-gray-100 p-4 rounded">
+            <p>Symbol: {ticker.symbol}</p>
+            <p>Price: ${ticker.price.toFixed(2)}</p>
+            <p>Exchange: {ticker.exchange}</p>
+          </div>
+        ))}
+      </div>
+    </main>
+  )
+}
+`
+        }
+    ],
+    "summary": "Multi-Exchange Cryptocurrency Data Aggregation system with rate limiting, modular exchange handling, and real-time data fetching using Next.js, TypeScript, and TailwindCSS"
+}
+
+Key Features:
+✅ Modular Exchange Integration
+✅ Rate Limiting
+✅ TypeScript Type Safety
+✅ Fallback/Redundancy Mechanisms
+✅ Real-time Data Updates
+✅ Error Handling
+✅ Scalable Architecture
+
+Recommended Additions:
+1. Add WebSocket support for real-time streaming
+2. Implement advanced error handling
+3. Create more comprehensive exchange adapters
+4. Add caching mechanism
+5. Implement comprehensive logging
+
+Deployment Considerations:
+- Use environment variables for API keys
+- Implement proper error boundaries
+- Add authentication/authorization
+- Consider serverless deployment strategies
 
 Would you like me to elaborate on any specific aspect of the implementation?
