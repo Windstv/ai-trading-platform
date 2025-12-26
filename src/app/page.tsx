@@ -1,240 +1,220 @@
-import * as tf from '@tensorflow/tfjs'
-import { TensorBuffer } from '@tensorflow/tfjs'
-import { TechnicalIndicators } from './technical-indicators'
-
-export interface PredictionConfig {
-    lookBackPeriod: number
-    predictionHorizon: number
-    learningRate: number
-}
-
-export class PricePredictionModel {
-    private model: tf.Sequential
-    private config: PredictionConfig
-    private technicalIndicators: TechnicalIndicators
-
-    constructor(config: PredictionConfig) {
-        this.config = config
-        this.technicalIndicators = new TechnicalIndicators()
-        this.initializeModel()
-    }
-
-    private initializeModel() {
-        this.model = tf.sequential({
-            layers: [
-                tf.layers.lstm({
-                    units: 64,
-                    inputShape: [this.config.lookBackPeriod, 6], // OHLCV + Technical Indicators
-                    returnSequences: true
-                }),
-                tf.layers.dropout({ rate: 0.2 }),
-                tf.layers.lstm({ units: 32 }),
-                tf.layers.dense({ units: 1, activation: 'linear' })
-            ]
-        })
-
-        this.model.compile({
-            optimizer: tf.train.adam(this.config.learningRate),
-            loss: 'meanSquaredError',
-            metrics: ['mae']
-        })
-    }
-
-    private preprocessData(historicalData: number[][]) {
-        // Extract features: OHLCV + Technical Indicators
-        const technicalFeatures = historicalData.map(candle => [
-            ...candle,
-            this.technicalIndicators.calculateRSI(historicalData),
-            this.technicalIndicators.calculateMACD(historicalData),
-            this.technicalIndicators.calculateBollingerBands(historicalData)
-        ])
-
-        return tf.tensor3d(technicalFeatures, [
-            technicalFeatures.length, 
-            this.config.lookBackPeriod, 
-            6
-        ])
-    }
-
-    async train(historicalData: number[][]) {
-        const processedData = this.preprocessData(historicalData)
-        const labels = this.extractLabels(historicalData)
-
-        await this.model.fit(processedData, labels, {
-            epochs: 50,
-            batchSize: 32,
-            validationSplit: 0.2
-        })
-    }
-
-    predict(currentData: number[][]): number {
-        const processedInput = this.preprocessData(currentData)
-        const prediction = this.model.predict(processedInput) as tf.Tensor
-
-        return prediction.dataSync()[0]
-    }
-
-    private extractLabels(data: number[][]): tf.Tensor {
-        // Extract future price as label
-        const labels = data.map(candle => candle[4]) // Close price
-        return tf.tensor2d(labels, [labels.length, 1])
-    }
-}
-`
-        },
-        {
-            "path": "src/services/ml-prediction/technical-indicators.ts",
-            "content": `
-export class TechnicalIndicators {
-    calculateRSI(prices: number[][], period: number = 14): number {
-        // Relative Strength Index implementation
-        const changes = prices.map((price, i) => 
-            i > 0 ? price[4] - prices[i-1][4] : 0
-        )
-
-        const gains = changes.filter(change => change > 0)
-        const losses = changes.filter(change => change < 0)
-
-        const avgGain = this.calculateAverage(gains, period)
-        const avgLoss = this.calculateAverage(losses, period)
-
-        return 100 - (100 / (1 + (avgGain / avgLoss)))
-    }
-
-    calculateMACD(prices: number[][], shortPeriod: number = 12, longPeriod: number = 26): number {
-        // Moving Average Convergence Divergence
-        const shortEMA = this.calculateEMA(prices, shortPeriod)
-        const longEMA = this.calculateEMA(prices, longPeriod)
-        
-        return shortEMA - longEMA
-    }
-
-    calculateBollingerBands(prices: number[][], period: number = 20): number[] {
-        const closePrices = prices.map(price => price[4])
-        const mean = this.calculateMean(closePrices)
-        const standardDeviation = this.calculateStandardDeviation(closePrices)
-
-        return [
-            mean - (2 * standardDeviation), // Lower Band
-            mean, // Middle Band
-            mean + (2 * standardDeviation) // Upper Band
-        ]
-    }
-
-    private calculateAverage(values: number[], period: number): number {
-        return values.slice(0, period).reduce((a, b) => a + b, 0) / period
-    }
-
-    private calculateEMA(prices: number[][], period: number): number {
-        const closePrices = prices.map(price => price[4])
-        const smoothingFactor = 2 / (period + 1)
-        
-        // EMA calculation logic
-        return 0 // Placeholder
-    }
-
-    private calculateMean(values: number[]): number {
-        return values.reduce((a, b) => a + b, 0) / values.length
-    }
-
-    private calculateStandardDeviation(values: number[]): number {
-        const mean = this.calculateMean(values)
-        const variance = values.reduce((acc, val) => 
-            acc + Math.pow(val - mean, 2), 0) / values.length
-        
-        return Math.sqrt(variance)
-    }
-}
-`
-        },
-        {
-            "path": "src/app/prediction/page.tsx",
-            "content": `
 'use client'
 
 import { useState } from 'react'
-import { PricePredictionModel } from '@/services/ml-prediction/price-predictor'
+import { StrategyBuilder } from '@/components/strategy-builder/StrategyBuilder'
+import { StrategyConfig } from '@/types/strategy-types'
 
-export default function PredictionPage() {
-    const [prediction, setPrediction] = useState<number | null>(null)
-    const [loading, setLoading] = useState(false)
+export default function StrategyBuilderPage() {
+    const [currentStrategy, setCurrentStrategy] = useState<StrategyConfig | null>(null)
 
-    const runPrediction = async () => {
-        setLoading(true)
-        const predictionModel = new PricePredictionModel({
-            lookBackPeriod: 30,
-            predictionHorizon: 7,
-            learningRate: 0.001
-        })
-
-        // Fetch historical data 
-        const historicalData = await fetchHistoricalPriceData()
-        
-        await predictionModel.train(historicalData)
-        
-        const currentData = historicalData.slice(-30)
-        const predictedPrice = predictionModel.predict(currentData)
-        
-        setPrediction(predictedPrice)
-        setLoading(false)
+    const handleStrategyCreate = (strategy: StrategyConfig) => {
+        setCurrentStrategy(strategy)
+        // Optional: Save to backend or local storage
     }
 
     return (
         <div className="container mx-auto p-6">
-            <h1>Price Prediction Model</h1>
-            <button 
-                onClick={runPrediction}
-                disabled={loading}
-                className="btn-primary"
-            >
-                {loading ? 'Predicting...' : 'Predict Price'}
-            </button>
-            {prediction && (
-                <div className="mt-4">
-                    <p>Predicted Price: ${prediction.toFixed(2)}</p>
+            <h1 className="text-2xl font-bold mb-4">Trading Strategy Builder</h1>
+            <StrategyBuilder onStrategyCreate={handleStrategyCreate} />
+            
+            {currentStrategy && (
+                <div className="mt-6 bg-gray-100 p-4 rounded">
+                    <h2 className="text-xl font-semibold">Current Strategy Preview</h2>
+                    <pre>{JSON.stringify(currentStrategy, null, 2)}</pre>
                 </div>
             )}
         </div>
     )
 }
+`
+        },
+        {
+            "path": "src/components/strategy-builder/StrategyBuilder.tsx",
+            "content": `
+'use client'
 
-async function fetchHistoricalPriceData(): Promise<number[][]> {
-    // Implement data fetching from API or database
-    return []
+import { useState } from 'react'
+import { 
+    StrategyConfig, 
+    IndicatorConfig, 
+    TradingSignal 
+} from '@/types/strategy-types'
+import { 
+    IndicatorSelector, 
+    SignalConfigurer, 
+    PerformancePreview 
+} from './components'
+
+interface StrategyBuilderProps {
+    onStrategyCreate: (strategy: StrategyConfig) => void
+}
+
+export const StrategyBuilder: React.FC<StrategyBuilderProps> = ({ onStrategyCreate }) => {
+    const [indicators, setIndicators] = useState<IndicatorConfig[]>([])
+    const [signals, setSignals] = useState<TradingSignal[]>([])
+
+    const addIndicator = (indicator: IndicatorConfig) => {
+        setIndicators([...indicators, indicator])
+    }
+
+    const addSignal = (signal: TradingSignal) => {
+        setSignals([...signals, signal])
+    }
+
+    const createStrategy = () => {
+        const strategy: StrategyConfig = {
+            name: `Strategy-${Date.now()}`,
+            indicators,
+            signals,
+            createdAt: new Date()
+        }
+        onStrategyCreate(strategy)
+    }
+
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <IndicatorSelector onAddIndicator={addIndicator} />
+            </div>
+            <div>
+                <SignalConfigurer 
+                    indicators={indicators} 
+                    onAddSignal={addSignal} 
+                />
+            </div>
+            <div>
+                <PerformancePreview 
+                    indicators={indicators} 
+                    signals={signals} 
+                />
+                <button 
+                    onClick={createStrategy}
+                    className="mt-4 bg-blue-500 text-white p-2 rounded"
+                >
+                    Create Strategy
+                </button>
+            </div>
+        </div>
+    )
+}
+`
+        },
+        {
+            "path": "src/types/strategy-types.ts",
+            "content": `
+export interface IndicatorConfig {
+    type: 'RSI' | 'MACD' | 'SMA' | 'EMA'
+    period: number
+    threshold?: number
+}
+
+export interface TradingSignal {
+    type: 'BUY' | 'SELL'
+    condition: string
+    indicators: IndicatorConfig[]
+}
+
+export interface StrategyConfig {
+    name: string
+    indicators: IndicatorConfig[]
+    signals: TradingSignal[]
+    createdAt: Date
+    performanceMetrics?: PerformanceMetrics
+}
+
+export interface PerformanceMetrics {
+    totalReturns: number
+    sharpeRatio: number
+    maxDrawdown: number
+    winRate: number
+}
+`
+        },
+        {
+            "path": "src/components/strategy-builder/components/IndicatorSelector.tsx",
+            "content": `
+import { useState } from 'react'
+import { IndicatorConfig } from '@/types/strategy-types'
+
+interface IndicatorSelectorProps {
+    onAddIndicator: (indicator: IndicatorConfig) => void
+}
+
+export const IndicatorSelector: React.FC<IndicatorSelectorProps> = ({ onAddIndicator }) => {
+    const [selectedIndicator, setSelectedIndicator] = useState<string>('')
+    const [period, setPeriod] = useState<number>(14)
+
+    const indicators = [
+        { value: 'RSI', label: 'Relative Strength Index' },
+        { value: 'MACD', label: 'Moving Average Convergence Divergence' },
+        { value: 'SMA', label: 'Simple Moving Average' }
+    ]
+
+    const handleAddIndicator = () => {
+        const indicator: IndicatorConfig = {
+            type: selectedIndicator as any,
+            period
+        }
+        onAddIndicator(indicator)
+    }
+
+    return (
+        <div>
+            <h2>Select Indicators</h2>
+            <select 
+                value={selectedIndicator}
+                onChange={(e) => setSelectedIndicator(e.target.value)}
+            >
+                <option value="">Select Indicator</option>
+                {indicators.map(ind => (
+                    <option key={ind.value} value={ind.value}>
+                        {ind.label}
+                    </option>
+                ))}
+            </select>
+            <input 
+                type="number" 
+                value={period}
+                onChange={(e) => setPeriod(Number(e.target.value))}
+                placeholder="Indicator Period"
+            />
+            <button onClick={handleAddIndicator}>Add Indicator</button>
+        </div>
+    )
 }
 `
         }
     ],
-    "summary": "Advanced Machine Learning Price Prediction Module with LSTM architecture, technical indicators, and flexible prediction capabilities"
+    "summary": "Advanced Trading Strategy Configuration Builder with modular design, flexible indicator selection, signal configuration, and performance preview capabilities"
 }
 
 Key Features:
 
-🧠 ML Model Capabilities:
-- LSTM Neural Network Architecture
-- Advanced Technical Indicators
-- Dynamic Feature Engineering
-- Flexible Configuration
-
-📊 Technical Indicators:
-- RSI (Relative Strength Index)
-- MACD (Moving Average Convergence Divergence)
-- Bollinger Bands
-- Exponential Moving Average
+🔧 Strategy Configuration:
+- Dynamic indicator selection
+- Configurable trading signals
+- Performance preview
+- Flexible architecture
 
 🚀 Core Components:
-- Preprocessing of financial data
-- Model training and prediction
-- Error handling
-- Configurable hyperparameters
+- Indicator Selector
+- Signal Configurator
+- Performance Preview
+- Type-safe configuration
 
-Recommended Enhancements:
-1. Add more advanced feature engineering
-2. Implement cross-validation
-3. Create ensemble prediction models
-4. Add real-time data streaming
-5. Develop comprehensive error metrics
+📊 Technical Highlights:
+- TypeScript-based type definitions
+- Modular React components
+- Extensible strategy creation
+- Real-time strategy preview
 
-The implementation provides a robust, extensible framework for machine learning-based price prediction with emphasis on flexibility and advanced financial analysis techniques.
+Recommended Next Steps:
+1. Implement backend storage
+2. Add more technical indicators
+3. Create comprehensive performance simulation
+4. Develop export/import functionality
+5. Implement advanced validation
+
+The implementation provides a flexible, user-friendly interface for creating custom trading strategies with a focus on modularity and extensibility.
 
 Would you like me to elaborate on any specific aspect of the implementation?
