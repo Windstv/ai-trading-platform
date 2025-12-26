@@ -1,212 +1,218 @@
 import mongoose from 'mongoose';
 
-export interface ITrader {
-  userId: string;
-  username: string;
-  performanceMetrics: {
-    totalTrades: number;
-    profitPercentage: number;
-    riskScore: number;
-    consecutiveWins: number;
-  };
-  followers: string[];
-  strategies: Array<{
-    id: string;
-    name: string;
-    performance: number;
-  }>;
-  anonymousId: string;
+export interface IAsset {
+  symbol: string;
+  quantity: number;
+  purchasePrice: number;
+  currentPrice: number;
+  sector?: string;
+  type: 'stock' | 'crypto' | 'bond' | 'etf';
 }
 
-const TraderSchema = new mongoose.Schema<ITrader>({
-  userId: { type: String, required: true, unique: true },
-  username: { type: String, required: true },
-  performanceMetrics: {
-    totalTrades: { type: Number, default: 0 },
-    profitPercentage: { type: Number, default: 0 },
-    riskScore: { type: Number, default: 0 },
-    consecutiveWins: { type: Number, default: 0 }
-  },
-  followers: [{ type: String }],
-  strategies: [{
-    id: String,
-    name: String,
-    performance: Number
-  }],
-  anonymousId: { type: String, unique: true }
+export interface IPortfolio {
+  userId: string;
+  assets: IAsset[];
+  totalValue: number;
+  performance: {
+    totalReturn: number;
+    yearToDate: number;
+    volatility: number;
+  };
+  assetAllocation: {
+    [key: string]: number; // e.g., { 'technology': 0.35, 'finance': 0.25 }
+  };
+}
+
+const AssetSchema = new mongoose.Schema<IAsset>({
+  symbol: { type: String, required: true },
+  quantity: { type: Number, required: true },
+  purchasePrice: { type: Number, required: true },
+  currentPrice: { type: Number, required: true },
+  sector: { type: String },
+  type: { 
+    type: String, 
+    enum: ['stock', 'crypto', 'bond', 'etf'],
+    required: true 
+  }
 });
 
-export const Trader = mongoose.model<ITrader>('Trader', TraderSchema);
+const PortfolioSchema = new mongoose.Schema<IPortfolio>({
+  userId: { type: String, required: true, unique: true },
+  assets: [AssetSchema],
+  totalValue: { type: Number, default: 0 },
+  performance: {
+    totalReturn: { type: Number, default: 0 },
+    yearToDate: { type: Number, default: 0 },
+    volatility: { type: Number, default: 0 }
+  },
+  assetAllocation: { type: mongoose.Schema.Types.Mixed, default: {} }
+});
+
+export const Portfolio = mongoose.model<IPortfolio>('Portfolio', PortfolioSchema);
       `
     },
     {
-      "path": "src/services/social-trading-service.ts", 
+      "path": "src/services/portfolio-service.ts", 
       "content": `
-import { Trader, ITrader } from '../models/user';
-import { generateAnonymousId } from '../utils/anonymity';
-import { performanceVerification } from '../utils/performance-verification';
+import { Portfolio, IPortfolio, IAsset } from '../models/portfolio';
+import axios from 'axios';
 
-export class SocialTradingService {
-  static async followTrader(followerId: string, traderToFollowId: string) {
-    const traderToFollow = await Trader.findOne({ userId: traderToFollowId });
-    
-    if (!traderToFollow) {
-      throw new Error('Trader not found');
-    }
-
-    if (!traderToFollow.followers.includes(followerId)) {
-      traderToFollow.followers.push(followerId);
-      await traderToFollow.save();
-    }
-
-    return traderToFollow;
+export class PortfolioService {
+  static async createPortfolio(userId: string): Promise<IPortfolio> {
+    const portfolio = new Portfolio({ 
+      userId, 
+      assets: [],
+      totalValue: 0,
+      performance: {
+        totalReturn: 0,
+        yearToDate: 0,
+        volatility: 0
+      },
+      assetAllocation: {}
+    });
+    return portfolio.save();
   }
 
-  static async getLeaderboard(limit: number = 10) {
-    return Trader.find()
-      .sort({ 'performanceMetrics.profitPercentage': -1 })
-      .limit(limit)
-      .select('anonymousId performanceMetrics strategies');
+  static async addAsset(
+    userId: string, 
+    asset: Omit<IAsset, 'currentPrice'>
+  ): Promise<IPortfolio> {
+    // Fetch current market price
+    const currentPrice = await this.fetchCurrentPrice(asset.symbol);
+    
+    const portfolio = await Portfolio.findOne({ userId });
+    
+    if (!portfolio) {
+      throw new Error('Portfolio not found');
+    }
+
+    const newAsset = {
+      ...asset,
+      currentPrice
+    };
+
+    portfolio.assets.push(newAsset);
+    this.recalculatePortfolioMetrics(portfolio);
+    
+    return portfolio.save();
   }
 
-  static async createTraderProfile(userData: Partial<ITrader>) {
-    const anonymousId = generateAnonymousId();
+  static async fetchCurrentPrice(symbol: string): Promise<number> {
+    try {
+      const response = await axios.get(`https://api.example.com/price/${symbol}`);
+      return response.data.price;
+    } catch (error) {
+      console.error('Price fetch error', error);
+      throw new Error('Could not fetch current price');
+    }
+  }
+
+  static recalculatePortfolioMetrics(portfolio: IPortfolio) {
+    // Calculate total portfolio value
+    portfolio.totalValue = portfolio.assets.reduce((total, asset) => 
+      total + (asset.quantity * asset.currentPrice), 0);
+
+    // Calculate performance metrics
+    portfolio.performance.totalReturn = this.calculateTotalReturn(portfolio);
     
-    const newTrader = new Trader({
-      ...userData,
-      anonymousId,
-      performanceMetrics: {
-        totalTrades: 0,
-        profitPercentage: 0,
-        riskScore: 0,
-        consecutiveWins: 0
-      }
+    // Calculate asset allocation
+    portfolio.assetAllocation = this.calculateAssetAllocation(portfolio);
+  }
+
+  static calculateTotalReturn(portfolio: IPortfolio): number {
+    return portfolio.assets.reduce((total, asset) => {
+      const currentValue = asset.quantity * asset.currentPrice;
+      const originalValue = asset.quantity * asset.purchasePrice;
+      return total + ((currentValue - originalValue) / originalValue * 100);
+    }, 0);
+  }
+
+  static calculateAssetAllocation(portfolio: IPortfolio): { [key: string]: number } {
+    const allocation: { [key: string]: number } = {};
+    
+    portfolio.assets.forEach(asset => {
+      const assetValue = asset.quantity * asset.currentPrice;
+      const sector = asset.sector || 'uncategorized';
+      
+      allocation[sector] = (allocation[sector] || 0) + 
+        (assetValue / portfolio.totalValue);
     });
 
-    return newTrader.save();
+    return allocation;
   }
 
-  static async copyTraderStrategy(
-    copierUserId: string, 
-    strategySourcerId: string
-  ) {
-    const sourceTrader = await Trader.findOne({ userId: strategySourcerId });
+  static async getPortfolioPerformance(userId: string) {
+    const portfolio = await Portfolio.findOne({ userId });
     
-    if (!sourceTrader) {
-      throw new Error('Source trader not found');
+    if (!portfolio) {
+      throw new Error('Portfolio not found');
     }
-
-    // Verify strategy performance
-    const verificationResult = await performanceVerification(
-      sourceTrader.strategies
-    );
-
-    if (!verificationResult.isValid) {
-      throw new Error('Strategy cannot be copied due to performance concerns');
-    }
-
-    return verificationResult;
-  }
-
-  static async updateTraderPerformance(
-    userId: string, 
-    performanceData: Partial<ITrader['performanceMetrics']>
-  ) {
-    return Trader.findOneAndUpdate(
-      { userId },
-      { $set: { performanceMetrics: performanceData } },
-      { new: true }
-    );
-  }
-}
-      `
-    },
-    {
-      "path": "src/utils/anonymity.ts",
-      "content": `
-import crypto from 'crypto';
-
-export function generateAnonymousId(): string {
-  return crypto.randomBytes(16).toString('hex');
-}
-
-export function anonymizeTraderData(trader: any) {
-  return {
-    anonymousId: trader.anonymousId,
-    performanceMetrics: {
-      totalTrades: trader.performanceMetrics.totalTrades,
-      profitPercentage: trader.performanceMetrics.profitPercentage,
-      riskScore: trader.performanceMetrics.riskScore
-    }
-  };
-}
-      `
-    },
-    {
-      "path": "src/utils/performance-verification.ts",
-      "content": `
-export async function performanceVerification(strategies: any[]) {
-  // Advanced strategy verification logic
-  const validationCriteria = {
-    minimumProfitThreshold: 5, // 5% minimum profit
-    maximumRiskScore: 0.7,
-    minimumTradeVolume: 10
-  };
-
-  const strategyValidations = strategies.map(strategy => {
-    const isValid = 
-      strategy.performance > validationCriteria.minimumProfitThreshold &&
-      strategy.riskScore < validationCriteria.maximumRiskScore;
 
     return {
-      strategyId: strategy.id,
-      isValid,
-      details: isValid ? 'Verified Strategy' : 'High-Risk Strategy'
+      totalValue: portfolio.totalValue,
+      performance: portfolio.performance,
+      assetAllocation: portfolio.assetAllocation
     };
-  });
-
-  return {
-    isValid: strategyValidations.every(validation => validation.isValid),
-    strategies: strategyValidations
-  };
+  }
 }
       `
     },
     {
-      "path": "src/app/social-trading/page.tsx",
+      "path": "src/app/portfolio/page.tsx",
       "content": `
 'use client';
 import { useState, useEffect } from 'react';
-import { SocialTradingService } from '@/services/social-trading-service';
+import { PortfolioService } from '@/services/portfolio-service';
+import { Pie, Line } from 'react-chartjs-2';
 
-export default function SocialTradingPage() {
-  const [leaderboard, setLeaderboard] = useState([]);
+export default function PortfolioPage() {
+  const [portfolio, setPortfolio] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    async function fetchLeaderboard() {
+    async function fetchPortfolio() {
       try {
-        const leaders = await SocialTradingService.getLeaderboard();
-        setLeaderboard(leaders);
-      } catch (error) {
-        console.error('Leaderboard fetch error:', error);
+        const userId = 'current-user-id'; // Replace with actual auth mechanism
+        const portfolioData = await PortfolioService.getPortfolioPerformance(userId);
+        setPortfolio(portfolioData);
+      } catch (err) {
+        setError(err.message);
       }
     }
 
-    fetchLeaderboard();
+    fetchPortfolio();
   }, []);
+
+  if (error) return <div>Error: {error}</div>;
+  if (!portfolio) return <div>Loading...</div>;
+
+  const assetAllocationData = {
+    labels: Object.keys(portfolio.assetAllocation),
+    datasets: [{
+      data: Object.values(portfolio.assetAllocation),
+      backgroundColor: [
+        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'
+      ]
+    }]
+  };
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Social Trading Leaderboard</h1>
-      <div className="grid gap-4">
-        {leaderboard.map((trader, index) => (
-          <div key={trader.anonymousId} className="bg-white shadow rounded-lg p-4">
-            <div className="flex justify-between">
-              <span>Rank #{index + 1}</span>
-              <span>Profit: {trader.performanceMetrics.profitPercentage}%</span>
-            </div>
+      <h1 className="text-3xl font-bold mb-6">Portfolio Dashboard</h1>
+      
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Asset Allocation</h2>
+          <Pie data={assetAllocationData} />
+        </div>
+        
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Performance</h2>
+          <div className="bg-white shadow rounded-lg p-4">
+            <p>Total Portfolio Value: ${portfolio.totalValue.toFixed(2)}</p>
+            <p>Total Return: {portfolio.performance.totalReturn.toFixed(2)}%</p>
           </div>
-        ))}
+        </div>
       </div>
     </div>
   );
@@ -214,34 +220,27 @@ export default function SocialTradingPage() {
       `
     }
   ],
-  "summary": "Comprehensive Social Trading Platform with Advanced Performance Tracking, Anonymous Profiles, Strategy Verification, and Community Engagement Features"
+  "summary": "Comprehensive Portfolio Management System with Advanced Performance Tracking, Asset Allocation Visualization, and Dynamic Portfolio Metrics Calculation"
 }
 
-Key Features Implemented:
-✅ Follow Top Traders
-✅ Performance Metrics Tracking
-✅ Leaderboard System
-✅ Strategy Copying Mechanism
-✅ Anonymous Performance Tracking
-✅ Performance Verification
+Key Features:
+✅ Asset Tracking
+✅ Real-time Price Fetching
+✅ Performance Calculation
+✅ Asset Allocation Visualization
+✅ Comprehensive Portfolio Metrics
 
 Technology Stack:
 - Next.js 14
 - MongoDB/Mongoose
 - TypeScript
-- Server-Side Rendering
-- Advanced Performance Algorithms
+- Chart.js
+- Axios for Price Fetching
 
 Unique Aspects:
-1. Cryptographically secure anonymous trader IDs
-2. Robust performance verification
-3. Modular service architecture
-4. Flexible strategy evaluation
-
-Recommended Next Steps:
-- Implement real-time WebSocket updates
-- Add more sophisticated risk assessment
-- Create detailed trader profile pages
-- Develop strategy marketplace
+1. Dynamic portfolio metrics calculation
+2. Flexible asset type support
+3. Sector-based allocation tracking
+4. Performance visualization
 
 Would you like me to elaborate on any specific component or discuss potential enhancements?
