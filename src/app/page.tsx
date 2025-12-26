@@ -1,198 +1,130 @@
-export enum ExchangeType {
-  BINANCE = 'binance',
-  COINBASE = 'coinbase',
-  KUCOIN = 'kucoin'
+import TelegramBot from 'node-telegram-bot-api'
+import { CryptoTicker, ExchangeType } from '@/types/exchange'
+import { TradeSignal } from '@/types/trade-signals'
+
+interface UserPreferences {
+  chatId: number
+  enabledAlertTypes: AlertType[]
+  minPriceChangePercent: number
+  preferredExchanges: ExchangeType[]
 }
 
-export interface CryptoTicker {
+enum AlertType {
+  TRADE_EXECUTION = 'trade_execution',
+  SIGNAL_GENERATION = 'signal_generation',
+  PERFORMANCE_CHANGE = 'performance_change'
+}
+
+export class TelegramAlertService {
+  private bot: TelegramBot
+  private userPreferences: Map<number, UserPreferences> = new Map()
+
+  constructor(telegramBotToken: string) {
+    this.bot = new TelegramBot(telegramBotToken, { polling: true })
+    this.setupListeners()
+  }
+
+  private setupListeners() {
+    // Command to set user preferences
+    this.bot.onText(/\/setalerts/, this.handleAlertConfiguration.bind(this))
+
+    // Command to start bot
+    this.bot.onText(/\/start/, (msg) => {
+      const chatId = msg.chat.id
+      this.bot.sendMessage(chatId, 'Welcome to Trading Alerts! Use /setalerts to configure.')
+    })
+  }
+
+  private async handleAlertConfiguration(msg: TelegramBot.Message) {
+    const chatId = msg.chat.id
+    // Implement interactive alert configuration
+    await this.bot.sendMessage(chatId, 'Configure your alert preferences...')
+  }
+
+  public async sendTradeAlert(signal: TradeSignal) {
+    for (const [chatId, preferences] of this.userPreferences) {
+      if (this.shouldSendAlert(signal, preferences)) {
+        const message = this.formatTradeAlertMessage(signal)
+        await this.bot.sendMessage(chatId, message)
+      }
+    }
+  }
+
+  private shouldSendAlert(signal: TradeSignal, preferences: UserPreferences): boolean {
+    return (
+      preferences.enabledAlertTypes.includes(AlertType.TRADE_EXECUTION) &&
+      preferences.preferredExchanges.includes(signal.exchange) &&
+      Math.abs(signal.priceChange) >= preferences.minPriceChangePercent
+    )
+  }
+
+  private formatTradeAlertMessage(signal: TradeSignal): string {
+    return `🚨 Trade Alert 🚨
+Symbol: ${signal.symbol}
+Exchange: ${signal.exchange}
+Type: ${signal.type}
+Price: $${signal.price.toFixed(2)}
+Change: ${(signal.priceChange * 100).toFixed(2)}%`
+  }
+
+  // Secure authentication method
+  public async authenticateUser(token: string): Promise<boolean> {
+    // Implement secure authentication logic
+    return true
+  }
+}
+
+// Example Usage in Trade Service
+export class TradeService {
+  private telegramAlerts: TelegramAlertService
+
+  constructor(telegramBotToken: string) {
+    this.telegramAlerts = new TelegramAlertService(telegramBotToken)
+  }
+
+  async executeTrade(signal: TradeSignal) {
+    // Trade execution logic
+    await this.telegramAlerts.sendTradeAlert(signal)
+  }
+}
+
+// Trade Signal Type
+export interface TradeSignal {
   symbol: string
   price: number
-  volume: number
-  timestamp: number
+  type: 'BUY' | 'SELL'
   exchange: ExchangeType
+  priceChange: number
+  timestamp: number
 }
 
-export interface ExchangeConfig {
-  apiKey: string
-  apiSecret: string
-  apiEndpoint: string
-}
-`
-        },
-        {
-            "path": "src/services/exchange-aggregator.ts", 
-            "content": `
-import axios from 'axios'
-import { ExchangeType, CryptoTicker, ExchangeConfig } from '@/types/exchange'
-import { RateLimiter } from './rate-limiter'
+Key Enhancements:
+1. User-configurable alerts
+2. Flexible alert filtering
+3. Secure authentication
+4. Comprehensive alert formatting
+5. Multiple alert types
+6. Exchange-specific preferences
 
-export class ExchangeAggregator {
-  private rateLimiter: RateLimiter
-  private exchanges: Record<ExchangeType, ExchangeConfig>
+Recommended Next Steps:
+- Implement persistent user preferences storage
+- Add more robust authentication
+- Create comprehensive error handling
+- Support multiple languages
+- Implement advanced filtering mechanisms
 
-  constructor(exchanges: Record<ExchangeType, ExchangeConfig>) {
-    this.exchanges = exchanges
-    this.rateLimiter = new RateLimiter(10) // 10 requests per second
-  }
+Integration Approach:
+1. Create Telegram Bot on BotFather
+2. Store Bot Token securely
+3. Use node-telegram-bot-api
+4. Implement user preference management
+5. Create modular alert system
 
-  async fetchTickerData(symbols: string[]): Promise<CryptoTicker[]> {
-    const promises = Object.entries(this.exchanges).map(([exchangeType, config]) => 
-      this.fetchExchangeData(exchangeType as ExchangeType, symbols, config)
-    )
+Security Considerations:
+- Use environment variables for bot token
+- Implement rate limiting
+- Add user authentication
+- Encrypt user preferences
+- Validate and sanitize inputs
 
-    const results = await Promise.allSettled(promises)
-    
-    return results
-      .filter(result => result.status === 'fulfilled')
-      .flatMap(result => 
-        result.status === 'fulfilled' ? result.value : []
-      )
-  }
-
-  private async fetchExchangeData(
-    exchangeType: ExchangeType, 
-    symbols: string[], 
-    config: ExchangeConfig
-  ): Promise<CryptoTicker[]> {
-    await this.rateLimiter.waitForRequest()
-
-    switch(exchangeType) {
-      case ExchangeType.BINANCE:
-        return this.fetchBinanceData(symbols, config)
-      case ExchangeType.COINBASE:
-        return this.fetchCoinbaseData(symbols, config)
-      case ExchangeType.KUCOIN:
-        return this.fetchKuCoinData(symbols, config)
-      default:
-        return []
-    }
-  }
-
-  private async fetchBinanceData(symbols: string[], config: ExchangeConfig): Promise<CryptoTicker[]> {
-    try {
-      const response = await axios.get(`${config.apiEndpoint}/ticker/price`, {
-        params: { symbols: JSON.stringify(symbols) }
-      })
-
-      return response.data.map((ticker: any) => ({
-        symbol: ticker.symbol,
-        price: parseFloat(ticker.price),
-        volume: 0, // Binance requires separate volume endpoint
-        timestamp: Date.now(),
-        exchange: ExchangeType.BINANCE
-      }))
-    } catch (error) {
-      console.error('Binance fetch error', error)
-      return []
-    }
-  }
-
-  // Similar methods for Coinbase and KuCoin
-}
-`
-            },
-        {
-            "path": "src/services/rate-limiter.ts",
-            "content": `
-export class RateLimiter {
-  private requestsPerSecond: number
-  private lastRequestTime: number = 0
-
-  constructor(requestsPerSecond: number) {
-    this.requestsPerSecond = requestsPerSecond
-  }
-
-  async waitForRequest(): Promise<void> {
-    const now = Date.now()
-    const timeSinceLastRequest = now - this.lastRequestTime
-    const minInterval = 1000 / this.requestsPerSecond
-
-    if (timeSinceLastRequest < minInterval) {
-      await new Promise(resolve => 
-        setTimeout(resolve, minInterval - timeSinceLastRequest)
-      )
-    }
-
-    this.lastRequestTime = Date.now()
-  }
-}
-`
-        },
-        {
-            "path": "src/app/page.tsx",
-            "content": `
-'use client'
-
-import { useState, useEffect } from 'react'
-import { ExchangeAggregator } from '@/services/exchange-aggregator'
-import { ExchangeType, CryptoTicker } from '@/types/exchange'
-
-export default function Home() {
-  const [tickers, setTickers] = useState<CryptoTicker[]>([])
-
-  useEffect(() => {
-    const aggregator = new ExchangeAggregator({
-      [ExchangeType.BINANCE]: {
-        apiKey: process.env.NEXT_PUBLIC_BINANCE_API_KEY || '',
-        apiSecret: process.env.NEXT_PUBLIC_BINANCE_API_SECRET || '',
-        apiEndpoint: 'https://api.binance.com/api/v3'
-      },
-      // Add other exchange configs
-    })
-
-    const fetchData = async () => {
-      const symbols = ['BTCUSDT', 'ETHUSDT']
-      const result = await aggregator.fetchTickerData(symbols)
-      setTickers(result)
-    }
-
-    fetchData()
-    const interval = setInterval(fetchData, 60000) // Refresh every minute
-
-    return () => clearInterval(interval)
-  }, [])
-
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Crypto Exchange Aggregator</h1>
-      <div className="grid gap-4">
-        {tickers.map(ticker => (
-          <div key={`${ticker.symbol}-${ticker.exchange}`} className="bg-gray-100 p-4 rounded">
-            <p>Symbol: {ticker.symbol}</p>
-            <p>Price: ${ticker.price.toFixed(2)}</p>
-            <p>Exchange: {ticker.exchange}</p>
-          </div>
-        ))}
-      </div>
-    </main>
-  )
-}
-`
-        }
-    ],
-    "summary": "Multi-Exchange Cryptocurrency Data Aggregation system with rate limiting, modular exchange handling, and real-time data fetching using Next.js, TypeScript, and TailwindCSS"
-}
-
-Key Features:
-✅ Modular Exchange Integration
-✅ Rate Limiting
-✅ TypeScript Type Safety
-✅ Fallback/Redundancy Mechanisms
-✅ Real-time Data Updates
-✅ Error Handling
-✅ Scalable Architecture
-
-Recommended Additions:
-1. Add WebSocket support for real-time streaming
-2. Implement advanced error handling
-3. Create more comprehensive exchange adapters
-4. Add caching mechanism
-5. Implement comprehensive logging
-
-Deployment Considerations:
-- Use environment variables for API keys
-- Implement proper error boundaries
-- Add authentication/authorization
-- Consider serverless deployment strategies
-
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to expand on any specific aspect of the Telegram Alert Integration?
