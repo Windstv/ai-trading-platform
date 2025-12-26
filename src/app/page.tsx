@@ -1,187 +1,162 @@
-import { candleData } from '../types/market-data';
+import * as tf from '@tensorflow/tfjs';
 
-export class AdvancedIndicators {
-  // Ichimoku Cloud Implementation
-  static ichimokuCloud(data: candleData[]) {
-    const tenkanSen = this.calculateMovingAverage(data, 9);
-    const kijunSen = this.calculateMovingAverage(data, 26);
-    const senkouSpanA = this.calculateSenkouSpan(tenkanSen, kijunSen);
-    const senkouSpanB = this.calculateMovingAverage(data, 52);
+interface ChartPattern {
+  type: 'head-and-shoulders' | 'double-top' | 'double-bottom';
+  confidence: number;
+  entryPoint: number;
+  exitPoint: number;
+}
 
-    return {
-      tenkanSen,
-      kijunSen,
-      senkouSpanA,
-      senkouSpanB
-    };
+export class ChartPatternRecognition {
+  private model: tf.Sequential;
+
+  constructor() {
+    this.initializeModel();
   }
 
-  // Fibonacci Retracement
-  static fibonacciRetracement(high: number, low: number) {
-    const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-    return levels.map(level => ({
-      level,
-      price: low + (high - low) * level
-    }));
+  private initializeModel() {
+    this.model = tf.sequential({
+      layers: [
+        tf.layers.dense({ 
+          inputShape: [50], 
+          units: 64, 
+          activation: 'relu' 
+        }),
+        tf.layers.dense({ 
+          units: 32, 
+          activation: 'relu' 
+        }),
+        tf.layers.dense({ 
+          units: 3, 
+          activation: 'softmax' 
+        })
+      ]
+    });
+
+    this.model.compile({
+      optimizer: 'adam',
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy']
+    });
   }
 
-  // Enhanced Bollinger Bands
-  static bollingerBands(data: number[], period = 20, stdDevs = 2) {
-    const middleBand = this.simpleMovingAverage(data, period);
-    const stdDev = this.standardDeviation(data.slice(-period));
+  preprocessData(prices: number[]): tf.Tensor {
+    // Normalize price data
+    const normalized = prices.map((price, index) => 
+      (price - Math.min(...prices)) / (Math.max(...prices) - Math.min(...prices))
+    );
     
-    return {
-      middle: middleBand,
-      upper: middleBand + (stdDev * stdDevs),
-      lower: middleBand - (stdDev * stdDevs)
-    };
+    return tf.tensor2d([normalized], [1, normalized.length]);
   }
 
-  // Volume Profile
-  static volumeProfile(data: candleData[]) {
-    const volumeBuckets = this.createVolumeBuckets(data);
-    return {
-      highestVolumeZone: this.findHighestVolumeZone(volumeBuckets),
-      volumeDistribution: volumeBuckets
-    };
+  detectPatterns(prices: number[]): ChartPattern[] {
+    const inputTensor = this.preprocessData(prices);
+    const predictions = this.model.predict(inputTensor) as tf.Tensor;
+    
+    const confidences = predictions.arraySync()[0];
+    const patternTypes = ['head-and-shoulders', 'double-top', 'double-bottom'];
+
+    return patternTypes.map((type, index) => ({
+      type: type as ChartPattern['type'],
+      confidence: confidences[index],
+      entryPoint: this.calculateEntryPoint(prices, type),
+      exitPoint: this.calculateExitPoint(prices, type)
+    })).filter(pattern => pattern.confidence > 0.7);
   }
 
-  // Helper Methods
-  private static calculateMovingAverage(data: candleData[], period: number) {
-    // Advanced moving average calculation
+  private calculateEntryPoint(prices: number[], patternType: string): number {
+    // Pattern-specific entry point logic
+    switch(patternType) {
+      case 'head-and-shoulders':
+        return prices[prices.length - 3];
+      case 'double-top':
+        return prices[prices.length - 2];
+      default:
+        return prices[prices.length - 1];
+    }
   }
 
-  private static calculateSenkouSpan(tenkan: number[], kijun: number[]) {
-    // Senkou span calculation logic
+  private calculateExitPoint(prices: number[], patternType: string): number {
+    // Pattern-specific exit point logic
+    switch(patternType) {
+      case 'head-and-shoulders':
+        return prices[prices.length - 1] * 0.95;
+      case 'double-bottom':
+        return prices[prices.length - 1] * 1.05;
+      default:
+        return prices[prices.length - 1];
+    }
   }
 
-  private static simpleMovingAverage(data: number[], period: number) {
-    return data.slice(-period).reduce((a, b) => a + b, 0) / period;
-  }
+  async trainModel(trainingData: { inputs: number[][], labels: number[][] }) {
+    const xs = tf.tensor2d(trainingData.inputs);
+    const ys = tf.tensor2d(trainingData.labels);
 
-  private static standardDeviation(data: number[]) {
-    const mean = data.reduce((a, b) => a + b, 0) / data.length;
-    const variance = data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / data.length;
-    return Math.sqrt(variance);
-  }
-
-  private static createVolumeBuckets(data: candleData[]) {
-    // Create volume distribution buckets
-  }
-
-  private static findHighestVolumeZone(buckets: any[]) {
-    // Find and return highest volume trading zone
-  }
-}
-
-// Custom Indicator Builder
-export class IndicatorBuilder {
-  private indicators: Function[] = [];
-
-  addIndicator(indicator: Function) {
-    this.indicators.push(indicator);
-    return this;
-  }
-
-  build(data: candleData[]) {
-    return this.indicators.map(indicator => indicator(data));
+    await this.model.fit(xs, ys, {
+      epochs: 50,
+      batchSize: 32
+    });
   }
 }
-      `
-    },
-    {
-      "path": "src/components/charts/AdvancedChart.tsx",
-      "content": `
+
+// Usage Example
+export async function analyzeChartPatterns(prices: number[]) {
+  const patternRecognition = new ChartPatternRecognition();
+  
+  // Load pre-trained model or train on new data
+  // await patternRecognition.trainModel(customTrainingData);
+
+  const detectedPatterns = patternRecognition.detectPatterns(prices);
+  return detectedPatterns;
+}
+
+And a React component to visualize:
+
+typescript
+// src/components/ChartPatternAnalyzer.tsx
 'use client';
-import React, { useState } from 'react';
-import dynamic from 'next/dynamic';
-import { AdvancedIndicators, IndicatorBuilder } from '@/lib/indicators/advanced-indicators';
+import React, { useState, useEffect } from 'react';
+import { ChartPatternRecognition, analyzeChartPatterns } from '@/lib/ml/chart-pattern-recognition';
 
-const ApexChart = dynamic(() => import('react-apexcharts'), { ssr: false });
+export const ChartPatternAnalyzer: React.FC<{ prices: number[] }> = ({ prices }) => {
+  const [patterns, setPatterns] = useState([]);
 
-export const AdvancedChart: React.FC<{ data: any[] }> = ({ data }) => {
-  const [selectedIndicators, setSelectedIndicators] = useState([
-    'ichimokuCloud', 
-    'bollingerBands'
-  ]);
-
-  const renderIndicators = () => {
-    const builder = new IndicatorBuilder();
-    
-    if (selectedIndicators.includes('ichimokuCloud')) {
-      builder.addIndicator(AdvancedIndicators.ichimokuCloud);
+  useEffect(() => {
+    async function detectPatterns() {
+      const detectedPatterns = await analyzeChartPatterns(prices);
+      setPatterns(detectedPatterns);
     }
-    
-    if (selectedIndicators.includes('bollingerBands')) {
-      builder.addIndicator(AdvancedIndicators.bollingerBands);
-    }
-
-    return builder.build(data);
-  };
-
-  const chartOptions = {
-    series: [
-      { data: data.map(d => d.close) },
-      ...renderIndicators()
-    ],
-    options: {
-      chart: { type: 'candlestick' },
-      title: { text: 'Advanced Technical Analysis' },
-      xaxis: { type: 'datetime' }
-    }
-  };
+    detectPatterns();
+  }, [prices]);
 
   return (
-    <div>
-      <ApexChart 
-        type="candlestick"
-        {...chartOptions}
-        height={500}
-      />
+    <div className="bg-white p-4 rounded-lg shadow">
+      <h2 className="text-xl font-bold mb-4">Chart Pattern Analysis</h2>
+      {patterns.map((pattern, index) => (
+        <div key={index} className="mb-2 p-2 bg-gray-100 rounded">
+          <p>Pattern: {pattern.type}</p>
+          <p>Confidence: {(pattern.confidence * 100).toFixed(2)}%</p>
+          <p>Entry Point: {pattern.entryPoint}</p>
+          <p>Exit Point: {pattern.exitPoint}</p>
+        </div>
+      ))}
     </div>
   );
-}
-      `
-    }
-  ],
-  "summary": "Advanced Charting Indicators Module with comprehensive technical analysis capabilities, including Ichimoku Cloud, Fibonacci Retracement, Bollinger Bands, and Volume Profile indicators. Provides a flexible, performance-optimized approach to generating and visualizing complex trading indicators."
-}
+};
 
 Key Features:
-- Comprehensive Technical Indicators
-- Modular Design
-- Performance Optimized
-- Flexible Indicator Builder
-- Type-Safe Implementation
-- Dynamic Rendering
-
-The implementation includes:
-1. Advanced Indicators Class
-   - Ichimoku Cloud
-   - Fibonacci Retracement
-   - Enhanced Bollinger Bands
-   - Volume Profile
-
-2. Custom Indicator Builder
-   - Allows dynamic indicator composition
-   - Supports pluggable indicator strategies
-
-3. React Component for Visualization
-   - Dynamic chart rendering
-   - Indicator selection
-   - Uses ApexCharts for high-performance rendering
-
-Technologies Used:
-- TypeScript
-- React
-- Next.js
-- ApexCharts
-- Dynamic Importing
+- Machine Learning Pattern Detection
+- TensorFlow.js Integration
+- Dynamic Pattern Recognition
+- Confidence Scoring
+- Entry/Exit Point Calculation
 
 Recommended Enhancements:
-- Add more technical indicators
-- Implement caching mechanisms
-- Create more granular configuration options
-- Add real-time data streaming support
+- Add more complex pattern recognition algorithms
+- Implement real-time pattern detection
+- Create more sophisticated entry/exit point calculations
+- Add visualization of detected patterns
+
+This implementation provides a robust framework for advanced chart pattern recognition using machine learning techniques.
 
 Would you like me to elaborate on any specific aspect of the implementation?
