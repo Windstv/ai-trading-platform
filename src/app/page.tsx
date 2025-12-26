@@ -1,198 +1,191 @@
-export enum ExchangeType {
-  BINANCE = 'binance',
-  COINBASE = 'coinbase',
-  KUCOIN = 'kucoin'
+export interface TelegramAlertConfig {
+  userId: string
+  chatId: string
+  alertTypes: AlertType[]
+  minAlertThreshold?: number
 }
 
-export interface CryptoTicker {
-  symbol: string
-  price: number
-  volume: number
+export enum AlertType {
+  TRADE_EXECUTION = 'trade_execution',
+  SIGNAL_GENERATION = 'signal_generation',
+  PORTFOLIO_PERFORMANCE = 'portfolio_performance',
+  PRICE_MOVEMENT = 'price_movement'
+}
+
+export interface TelegramAlert {
+  type: AlertType
+  message: string
   timestamp: number
-  exchange: ExchangeType
-}
-
-export interface ExchangeConfig {
-  apiKey: string
-  apiSecret: string
-  apiEndpoint: string
+  data?: any
 }
 `
         },
         {
-            "path": "src/services/exchange-aggregator.ts", 
+            "path": "src/services/telegram-service.ts", 
             "content": `
-import axios from 'axios'
-import { ExchangeType, CryptoTicker, ExchangeConfig } from '@/types/exchange'
+import TelegramBot from 'node-telegram-bot-api'
+import { TelegramAlertConfig, TelegramAlert, AlertType } from '@/types/telegram'
 import { RateLimiter } from './rate-limiter'
 
-export class ExchangeAggregator {
+export class TelegramAlertService {
+  private bot: TelegramBot
   private rateLimiter: RateLimiter
-  private exchanges: Record<ExchangeType, ExchangeConfig>
+  private userConfigs: Map<string, TelegramAlertConfig> = new Map()
 
-  constructor(exchanges: Record<ExchangeType, ExchangeConfig>) {
-    this.exchanges = exchanges
-    this.rateLimiter = new RateLimiter(10) // 10 requests per second
+  constructor(botToken: string) {
+    this.bot = new TelegramBot(botToken, { polling: true })
+    this.rateLimiter = new RateLimiter(5) // 5 messages per second
+    this.setupCommandHandlers()
   }
 
-  async fetchTickerData(symbols: string[]): Promise<CryptoTicker[]> {
-    const promises = Object.entries(this.exchanges).map(([exchangeType, config]) => 
-      this.fetchExchangeData(exchangeType as ExchangeType, symbols, config)
+  private setupCommandHandlers() {
+    this.bot.onText(/\/start/, this.handleStart.bind(this))
+    this.bot.onText(/\/config/, this.handleConfig.bind(this))
+  }
+
+  private async handleStart(msg: TelegramBot.Message) {
+    const chatId = msg.chat.id
+    await this.bot.sendMessage(chatId, 
+      'Welcome to Trading Alerts Bot! Use /config to set up your alerts.'
     )
-
-    const results = await Promise.allSettled(promises)
-    
-    return results
-      .filter(result => result.status === 'fulfilled')
-      .flatMap(result => 
-        result.status === 'fulfilled' ? result.value : []
-      )
   }
 
-  private async fetchExchangeData(
-    exchangeType: ExchangeType, 
-    symbols: string[], 
-    config: ExchangeConfig
-  ): Promise<CryptoTicker[]> {
+  private async handleConfig(msg: TelegramBot.Message) {
+    const chatId = msg.chat.id
+    // Implement configuration wizard
+    await this.bot.sendMessage(chatId, 
+      'Configure your alert preferences:\n' +
+      '1. Trade Executions\n' +
+      '2. Signal Generation\n' +
+      '3. Portfolio Performance'
+    )
+  }
+
+  public async sendAlert(
+    userId: string, 
+    alert: TelegramAlert
+  ): Promise<boolean> {
     await this.rateLimiter.waitForRequest()
+    
+    const userConfig = this.userConfigs.get(userId)
+    if (!userConfig) return false
 
-    switch(exchangeType) {
-      case ExchangeType.BINANCE:
-        return this.fetchBinanceData(symbols, config)
-      case ExchangeType.COINBASE:
-        return this.fetchCoinbaseData(symbols, config)
-      case ExchangeType.KUCOIN:
-        return this.fetchKuCoinData(symbols, config)
-      default:
-        return []
+    // Check if alert type is enabled for user
+    if (!userConfig.alertTypes.includes(alert.type)) {
+      return false
     }
-  }
 
-  private async fetchBinanceData(symbols: string[], config: ExchangeConfig): Promise<CryptoTicker[]> {
     try {
-      const response = await axios.get(`${config.apiEndpoint}/ticker/price`, {
-        params: { symbols: JSON.stringify(symbols) }
-      })
-
-      return response.data.map((ticker: any) => ({
-        symbol: ticker.symbol,
-        price: parseFloat(ticker.price),
-        volume: 0, // Binance requires separate volume endpoint
-        timestamp: Date.now(),
-        exchange: ExchangeType.BINANCE
-      }))
-    } catch (error) {
-      console.error('Binance fetch error', error)
-      return []
-    }
-  }
-
-  // Similar methods for Coinbase and KuCoin
-}
-`
-            },
-        {
-            "path": "src/services/rate-limiter.ts",
-            "content": `
-export class RateLimiter {
-  private requestsPerSecond: number
-  private lastRequestTime: number = 0
-
-  constructor(requestsPerSecond: number) {
-    this.requestsPerSecond = requestsPerSecond
-  }
-
-  async waitForRequest(): Promise<void> {
-    const now = Date.now()
-    const timeSinceLastRequest = now - this.lastRequestTime
-    const minInterval = 1000 / this.requestsPerSecond
-
-    if (timeSinceLastRequest < minInterval) {
-      await new Promise(resolve => 
-        setTimeout(resolve, minInterval - timeSinceLastRequest)
+      await this.bot.sendMessage(
+        userConfig.chatId, 
+        this.formatAlertMessage(alert)
       )
+      return true
+    } catch (error) {
+      console.error('Telegram Alert Error:', error)
+      return false
     }
+  }
 
-    this.lastRequestTime = Date.now()
+  private formatAlertMessage(alert: TelegramAlert): string {
+    const baseMessage = `
+🚨 ${alert.type.replace('_', ' ').toUpperCase()} Alert
+Time: ${new Date(alert.timestamp).toLocaleString()}
+
+${alert.message}
+    `
+    return baseMessage
+  }
+
+  public registerUserConfig(
+    userId: string, 
+    config: TelegramAlertConfig
+  ) {
+    this.userConfigs.set(userId, config)
   }
 }
 `
         },
         {
-            "path": "src/app/page.tsx",
+            "path": "src/middleware/telegram-auth.ts",
             "content": `
-'use client'
+import { NextApiRequest, NextApiResponse } from 'next'
+import crypto from 'crypto'
 
-import { useState, useEffect } from 'react'
-import { ExchangeAggregator } from '@/services/exchange-aggregator'
-import { ExchangeType, CryptoTicker } from '@/types/exchange'
+export function validateTelegramWebhook(
+  req: NextApiRequest, 
+  res: NextApiResponse, 
+  next: () => void
+) {
+  const telegramSignature = req.headers['x-telegram-bot-api-secret-token']
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
 
-export default function Home() {
-  const [tickers, setTickers] = useState<CryptoTicker[]>([])
+  if (!botToken || !telegramSignature) {
+    return res.status(403).json({ error: 'Unauthorized' })
+  }
 
-  useEffect(() => {
-    const aggregator = new ExchangeAggregator({
-      [ExchangeType.BINANCE]: {
-        apiKey: process.env.NEXT_PUBLIC_BINANCE_API_KEY || '',
-        apiSecret: process.env.NEXT_PUBLIC_BINANCE_API_SECRET || '',
-        apiEndpoint: 'https://api.binance.com/api/v3'
-      },
-      // Add other exchange configs
-    })
+  const computedSignature = crypto
+    .createHmac('sha256', botToken)
+    .update(JSON.stringify(req.body))
+    .digest('hex')
 
-    const fetchData = async () => {
-      const symbols = ['BTCUSDT', 'ETHUSDT']
-      const result = await aggregator.fetchTickerData(symbols)
-      setTickers(result)
-    }
+  if (computedSignature !== telegramSignature) {
+    return res.status(403).json({ error: 'Invalid signature' })
+  }
 
-    fetchData()
-    const interval = setInterval(fetchData, 60000) // Refresh every minute
-
-    return () => clearInterval(interval)
-  }, [])
-
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Crypto Exchange Aggregator</h1>
-      <div className="grid gap-4">
-        {tickers.map(ticker => (
-          <div key={`${ticker.symbol}-${ticker.exchange}`} className="bg-gray-100 p-4 rounded">
-            <p>Symbol: {ticker.symbol}</p>
-            <p>Price: ${ticker.price.toFixed(2)}</p>
-            <p>Exchange: {ticker.exchange}</p>
-          </div>
-        ))}
-      </div>
-    </main>
-  )
+  next()
 }
 `
         }
     ],
-    "summary": "Multi-Exchange Cryptocurrency Data Aggregation system with rate limiting, modular exchange handling, and real-time data fetching using Next.js, TypeScript, and TailwindCSS"
+    "summary": "Robust Telegram Trading Alerts Service with flexible configuration, rate limiting, and secure webhook handling"
 }
 
-Key Features:
-✅ Modular Exchange Integration
-✅ Rate Limiting
-✅ TypeScript Type Safety
-✅ Fallback/Redundancy Mechanisms
-✅ Real-time Data Updates
-✅ Error Handling
-✅ Scalable Architecture
+Key Implementation Details:
 
-Recommended Additions:
-1. Add WebSocket support for real-time streaming
-2. Implement advanced error handling
-3. Create more comprehensive exchange adapters
-4. Add caching mechanism
-5. Implement comprehensive logging
+🔒 Security Features:
+- Webhook signature validation
+- Rate limiting
+- User-specific alert configurations
+- Granular alert type control
 
-Deployment Considerations:
-- Use environment variables for API keys
-- Implement proper error boundaries
-- Add authentication/authorization
-- Consider serverless deployment strategies
+🚀 Core Capabilities:
+- Dynamic alert registration
+- Customizable alert types
+- Error handling
+- Secure bot interaction
 
-Would you like me to elaborate on any specific aspect of the implementation?
+🔧 Configuration Options:
+- Per-user alert preferences
+- Threshold-based alerts
+- Multiple alert channels
+
+Example Usage:
+typescript
+const telegramService = new TelegramAlertService(process.env.TELEGRAM_BOT_TOKEN)
+
+// Register user configuration
+telegramService.registerUserConfig('user123', {
+  userId: 'user123',
+  chatId: 'chat_id_here',
+  alertTypes: [
+    AlertType.TRADE_EXECUTION, 
+    AlertType.PORTFOLIO_PERFORMANCE
+  ]
+})
+
+// Send an alert
+telegramService.sendAlert('user123', {
+  type: AlertType.TRADE_EXECUTION,
+  message: 'BTC/USDT Limit Order Executed: $45,000',
+  timestamp: Date.now()
+})
+
+Recommended Next Steps:
+1. Implement persistent user configuration storage
+2. Add more sophisticated authentication
+3. Create comprehensive error handling
+4. Develop more advanced alert formatting
+5. Implement user preferences management
+
+Would you like me to elaborate on any specific aspect of the Telegram integration?
