@@ -1,166 +1,171 @@
-import { Database } from '@/lib/database';
-import { MachineLearningService } from '@/services/ml/machine-learning.service';
-import { NotificationService } from '@/services/notifications/notification.service';
+import { ExchangeDataProvider } from './exchange-data-provider';
+import { CandlestickPatternRecognition } from './candlestick-patterns';
+import { TechnicalIndicators } from './technical-indicators';
 
-interface AlertTrigger {
-  type: 'price' | 'volume' | 'indicator';
-  symbol: string;
-  condition: {
-    comparison: '>' | '<' | '=' | '>=' | '<=';
-    value: number;
-  };
+export interface ScreenerConfig {
+  exchanges: string[];
+  timeframes: '1m' | '5m' | '15m' | '1h' | '4h' | '1d'[];
+  assetTypes: 'crypto' | 'stocks' | 'forex'[];
+  indicators: string[];
+  patterns: string[];
 }
 
-interface Alert {
-  id: string;
-  name: string;
-  trigger: AlertTrigger;
-  channels: ('email' | 'sms' | 'telegram')[];
-  createdAt: Date;
-  lastTriggered?: Date;
-  accuracy: number;
-}
+export class TechnicalAnalysisScreener {
+  private exchangeProviders: ExchangeDataProvider[];
+  private patternRecognition: CandlestickPatternRecognition;
+  private technicalIndicators: TechnicalIndicators;
 
-export class TradingAlertsService {
-  private db: Database;
-  private mlService: MachineLearningService;
-  private notificationService: NotificationService;
-
-  constructor() {
-    this.db = new Database();
-    this.mlService = new MachineLearningService();
-    this.notificationService = new NotificationService();
+  constructor(config: ScreenerConfig) {
+    this.exchangeProviders = config.exchanges.map(
+      exchange => new ExchangeDataProvider(exchange)
+    );
+    this.patternRecognition = new CandlestickPatternRecognition();
+    this.technicalIndicators = new TechnicalIndicators();
   }
 
-  // Create custom alert
-  async createAlert(alertConfig: Omit<Alert, 'id' | 'createdAt' | 'accuracy'>): Promise<Alert> {
-    const newAlert: Alert = {
-      id: this.generateUniqueId(),
-      ...alertConfig,
-      createdAt: new Date(),
-      accuracy: 0
-    };
+  async scanMarkets(config: ScreenerConfig): Promise<TradingSignal[]> {
+    const signals: TradingSignal[] = [];
 
-    await this.db.saveAlert(newAlert);
-    return newAlert;
-  }
+    for (const exchange of this.exchangeProviders) {
+      const markets = await exchange.getMarkets(config.assetTypes);
 
-  // Check alert conditions
-  async checkAlertConditions(marketData: {
-    symbol: string;
-    price: number;
-    volume: number;
-    indicators: Record<string, number>
-  }) {
-    const alerts = await this.db.getActiveAlerts();
-
-    for (const alert of alerts) {
-      const conditionMet = this.evaluateAlertCondition(alert, marketData);
-      
-      if (conditionMet) {
-        await this.triggerAlert(alert, marketData);
+      for (const market of markets) {
+        for (const timeframe of config.timeframes) {
+          const candles = await exchange.getHistoricalCandles(market, timeframe);
+          
+          const analysis = this.analyzeMarket(candles, config);
+          if (analysis.length > 0) {
+            signals.push(...analysis);
+          }
+        }
       }
     }
+
+    return signals;
   }
 
-  private evaluateAlertCondition(alert: Alert, marketData: any): boolean {
-    const { trigger } = alert;
-    const value = this.getMarketValue(trigger.type, marketData);
+  private analyzeMarket(candles: Candle[], config: ScreenerConfig): TradingSignal[] {
+    const signals: TradingSignal[] = [];
 
-    switch(trigger.condition.comparison) {
-      case '>': return value > trigger.condition.value;
-      case '<': return value < trigger.condition.value;
-      case '=': return value === trigger.condition.value;
-      case '>=': return value >= trigger.condition.value;
-      case '<=': return value <= trigger.condition.value;
-      default: return false;
-    }
-  }
+    // Pattern Recognition
+    const patterns = this.patternRecognition.detectPatterns(candles);
+    const matchedPatterns = patterns.filter(p => 
+      config.patterns.includes(p.type)
+    );
 
-  private getMarketValue(type: AlertTrigger['type'], marketData: any): number {
-    switch(type) {
-      case 'price': return marketData.price;
-      case 'volume': return marketData.volume;
-      case 'indicator': 
-        // Assumes specific indicator name in marketData.indicators
-        return marketData.indicators[type] || 0;
-    }
-  }
+    // Indicator Analysis
+    const indicatorResults = config.indicators.map(indicator => 
+      this.technicalIndicators.analyze(indicator, candles)
+    );
 
-  // Trigger alert across multiple channels
-  private async triggerAlert(alert: Alert, marketData: any) {
-    const alertDetails = {
-      symbol: alert.trigger.symbol,
-      condition: alert.trigger.condition,
-      currentValue: this.getMarketValue(alert.trigger.type, marketData)
-    };
-
-    // Smart prediction accuracy
-    const predictionAccuracy = await this.mlService.predictAlertAccuracy(alert);
-    
-    // Multi-channel notifications
-    for (const channel of alert.channels) {
-      await this.notificationService.send(channel, {
-        title: `Alert: ${alert.name}`,
-        message: JSON.stringify(alertDetails)
+    // Generate Trading Signals
+    for (const pattern of matchedPatterns) {
+      signals.push({
+        symbol: pattern.symbol,
+        type: pattern.type === 'bullish' ? 'BUY' : 'SELL',
+        confidence: pattern.confidence,
+        indicators: indicatorResults
       });
     }
 
-    // Update alert history and accuracy
-    await this.updateAlertPerformance(alert.id, predictionAccuracy);
+    return signals;
   }
 
-  private async updateAlertPerformance(alertId: string, accuracy: number) {
-    await this.db.updateAlert(alertId, {
-      lastTriggered: new Date(),
-      accuracy
+  createAlert(signal: TradingSignal) {
+    // Implement alert creation logic
+  }
+}
+
+interface Candle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  timestamp: number;
+}
+
+interface TradingSignal {
+  symbol: string;
+  type: 'BUY' | 'SELL';
+  confidence: number;
+  indicators: any[];
+}
+`
+    },
+    {
+      "path": "src/app/screener/page.tsx",
+      "content": `
+'use client';
+import { useState } from 'react';
+import { TechnicalAnalysisScreener } from '@/services/technical-analysis/screener.service';
+
+export default function ScreenerPage() {
+  const [signals, setSignals] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const runScreener = async () => {
+    setLoading(true);
+    const screener = new TechnicalAnalysisScreener({
+      exchanges: ['binance', 'kraken'],
+      timeframes: ['1h', '4h'],
+      assetTypes: ['crypto'],
+      indicators: ['RSI', 'MACD'],
+      patterns: ['bullish_engulfing', 'hammer']
     });
-  }
 
-  private generateUniqueId(): string {
-    return Math.random().toString(36).substring(2, 15);
-  }
+    const results = await screener.scanMarkets();
+    setSignals(results);
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Technical Analysis Screener</h1>
+      <button 
+        onClick={runScreener}
+        className="bg-blue-500 text-white px-4 py-2 rounded"
+      >
+        {loading ? 'Scanning...' : 'Run Screener'}
+      </button>
+
+      {loading && <div>Analyzing markets...</div>}
+      
+      <div className="mt-6">
+        {signals.map((signal, index) => (
+          <div key={index} className="bg-gray-100 p-4 mb-2 rounded">
+            <div>Symbol: {signal.symbol}</div>
+            <div>Type: {signal.type}</div>
+            <div>Confidence: {signal.confidence}%</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+`
+    }
+  ],
+  "summary": "A comprehensive Technical Analysis Screener that supports multiple exchanges, candlestick pattern recognition, and flexible market scanning with configurable parameters. The system allows screening across different timeframes, asset types, and provides trading signals based on technical indicators and patterns."
 }
 
-// Export singleton
-export const tradingAlertsService = new TradingAlertsService();
+Key Components:
+1. `TechnicalAnalysisScreener`: Core screening service
+2. Supports multiple exchanges
+3. Configurable market scanning
+4. Pattern and indicator recognition
+5. Trading signal generation
+6. React frontend for interaction
 
-Complementary Services:
+Additional Services to Implement:
+- `ExchangeDataProvider`: Fetch market data
+- `CandlestickPatternRecognition`: Detect chart patterns
+- `TechnicalIndicators`: Calculate RSI, MACD, etc.
 
-typescript
-// File: src/services/ml/machine-learning.service.ts
-export class MachineLearningService {
-  async predictAlertAccuracy(alert: Alert): Promise<number> {
-    // Implement ML model to predict alert accuracy
-    // Could use historical data, market conditions, etc.
-    return Math.random(); // Placeholder
-  }
-}
+Recommended Enhancements:
+- Add more exchanges
+- Implement more technical indicators
+- Create advanced filtering
+- Add real-time scanning capabilities
+- Integrate machine learning for signal prediction
 
-// File: src/services/notifications/notification.service.ts
-export class NotificationService {
-  async send(channel: 'email' | 'sms' | 'telegram', message: {
-    title: string, 
-    message: string
-  }) {
-    // Implement channel-specific notification logic
-    console.log(`Sending ${channel} notification:`, message);
-  }
-}
-
-Key Features Implemented:
-✅ Custom Alert Creation
-✅ Multiple Trigger Types
-✅ Multi-Channel Notifications
-✅ Alert Performance Tracking
-✅ Machine Learning Integration
-✅ Flexible Condition Evaluation
-
-Recommended Next Steps:
-1. Implement actual ML accuracy prediction
-2. Add robust error handling
-3. Create persistent database storage
-4. Develop comprehensive notification integrations
-5. Add advanced filtering and complex condition support
-
-Would you like me to expand on any specific aspect of the Trading Alerts System?
+Would you like me to elaborate on any specific aspect of the implementation?
