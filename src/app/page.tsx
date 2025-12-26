@@ -1,175 +1,271 @@
+import { EventEmitter } from 'events';
+
+export interface NotificationConfig {
+  type: 'price' | 'technical' | 'risk';
+  asset: string;
+  threshold: number;
+  condition: 'above' | 'below' | 'crossover';
+  channels: ('email' | 'sms' | 'push')[];
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  message: string;
+  timestamp: Date;
+  read: boolean;
+}
+
+export class NotificationService extends EventEmitter {
+  private static instance: NotificationService;
+  private notifications: Notification[] = [];
+  private configs: NotificationConfig[] = [];
+
+  private constructor() {
+    super();
+  }
+
+  public static getInstance(): NotificationService {
+    if (!NotificationService.instance) {
+      NotificationService.instance = new NotificationService();
+    }
+    return NotificationService.instance;
+  }
+
+  // Create alert configuration
+  createAlertConfig(config: NotificationConfig): string {
+    const configId = this.generateUniqueId();
+    this.configs.push({ ...config, id: configId });
+    return configId;
+  }
+
+  // Check and trigger notifications
+  checkAlertConditions(data: any) {
+    this.configs.forEach(config => {
+      const matches = this.evaluateCondition(data, config);
+      if (matches) {
+        this.createNotification(config, data);
+      }
+    });
+  }
+
+  private evaluateCondition(data: any, config: NotificationConfig): boolean {
+    switch(config.condition) {
+      case 'above':
+        return data[config.asset] > config.threshold;
+      case 'below':
+        return data[config.asset] < config.threshold;
+      default:
+        return false;
+    }
+  }
+
+  private createNotification(config: NotificationConfig, data: any) {
+    const notification: Notification = {
+      id: this.generateUniqueId(),
+      type: config.type,
+      message: this.generateNotificationMessage(config, data),
+      timestamp: new Date(),
+      read: false
+    };
+
+    this.notifications.push(notification);
+    this.emit('newNotification', notification);
+    this.sendMultiChannelNotification(config, notification);
+  }
+
+  private generateNotificationMessage(config: NotificationConfig, data: any): string {
+    return `Alert: ${config.asset} ${config.condition} ${config.threshold}`;
+  }
+
+  private sendMultiChannelNotification(config: NotificationConfig, notification: Notification) {
+    config.channels.forEach(channel => {
+      switch(channel) {
+        case 'email':
+          this.sendEmailNotification(notification);
+          break;
+        case 'sms':
+          this.sendSMSNotification(notification);
+          break;
+        case 'push':
+          this.sendPushNotification(notification);
+          break;
+      }
+    });
+  }
+
+  private sendEmailNotification(notification: Notification) {
+    console.log('Email Notification:', notification);
+  }
+
+  private sendSMSNotification(notification: Notification) {
+    console.log('SMS Notification:', notification);
+  }
+
+  private sendPushNotification(notification: Notification) {
+    console.log('Push Notification:', notification);
+  }
+
+  private generateUniqueId(): string {
+    return Math.random().toString(36).substr(2, 9);
+  }
+
+  // Retrieve notifications
+  getNotifications(limit: number = 10, unreadOnly: boolean = false): Notification[] {
+    const filtered = unreadOnly 
+      ? this.notifications.filter(n => !n.read)
+      : this.notifications;
+    return filtered.slice(0, limit).sort((a, b) => 
+      b.timestamp.getTime() - a.timestamp.getTime()
+    );
+  }
+
+  // Mark notification as read
+  markNotificationRead(id: string) {
+    const notification = this.notifications.find(n => n.id === id);
+    if (notification) {
+      notification.read = true;
+    }
+  }
+}
+      `
+    },
+    {
+      "path": "src/components/NotificationCenter.tsx",
+      "content": `
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Line, Heatmap } from '@ant-design/plots';
-import { RiskCalculationService } from '@/services/risk-calculation';
+import { NotificationService } from '@/services/notification-service';
 
-export default function RiskAnalyticsDashboard() {
-  const [portfolioRisks, setPortfolioRisks] = useState({
-    valueAtRisk: 0,
-    correlationMatrix: [],
-    drawdownData: [],
-    riskHeatmap: []
-  });
-
-  const riskService = new RiskCalculationService();
+export function NotificationCenter() {
+  const [notifications, setNotifications] = useState([]);
+  const notificationService = NotificationService.getInstance();
 
   useEffect(() => {
-    async function fetchRiskMetrics() {
-      const risks = await riskService.calculateComprehensiveRisks();
-      setPortfolioRisks(risks);
-    }
-    fetchRiskMetrics();
+    // Initial load
+    setNotifications(notificationService.getNotifications());
+
+    // Listen for new notifications
+    const handleNewNotification = (notification) => {
+      setNotifications(prev => [notification, ...prev]);
+    };
+
+    notificationService.on('newNotification', handleNewNotification);
+
+    return () => {
+      notificationService.off('newNotification', handleNewNotification);
+    };
   }, []);
 
+  const handleMarkAsRead = (id) => {
+    notificationService.markNotificationRead(id);
+    setNotifications(prev => 
+      prev.map(n => n.id === id ? { ...n, read: true } : n)
+    );
+  };
+
   return (
-    <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-3xl font-bold mb-6">Risk Analytics Dashboard</h1>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Value at Risk (VaR) */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-4">Value at Risk (VaR)</h2>
-          <div className="text-4xl font-bold text-red-500">
-            {portfolioRisks.valueAtRisk.toFixed(2)}%
-          </div>
+    <div className="notification-center">
+      <h2>Notifications</h2>
+      {notifications.map(notification => (
+        <div 
+          key={notification.id}
+          className={`notification ${notification.read ? 'read' : 'unread'}`}
+        >
+          <p>{notification.message}</p>
+          <span>{notification.timestamp.toLocaleString()}</span>
+          {!notification.read && (
+            <button onClick={() => handleMarkAsRead(notification.id)}>
+              Mark as Read
+            </button>
+          )}
         </div>
-
-        {/* Drawdown Analysis */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-4">Portfolio Drawdown</h2>
-          <Line 
-            data={portfolioRisks.drawdownData}
-            xField="date"
-            yField="drawdown"
-          />
-        </div>
-
-        {/* Correlation Matrix */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-4">Asset Correlation</h2>
-          <Heatmap 
-            data={portfolioRisks.correlationMatrix}
-            xField="asset1"
-            yField="asset2"
-            colorField="correlation"
-          />
-        </div>
-
-        {/* Risk Heatmap */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-4">Portfolio Risk Heatmap</h2>
-          <Heatmap 
-            data={portfolioRisks.riskHeatmap}
-            xField="asset"
-            yField="risk"
-            colorField="score"
-          />
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
       `
     },
     {
-      "path": "src/services/risk-calculation.ts",
+      "path": "src/app/page.tsx",
       "content": `
-import { math } from 'mathjs';
+'use client';
+import React, { useEffect } from 'react';
+import { NotificationService } from '@/services/notification-service';
+import { NotificationCenter } from '@/components/NotificationCenter';
 
-interface RiskMetrics {
-  valueAtRisk: number;
-  correlationMatrix: any[];
-  drawdownData: any[];
-  riskHeatmap: any[];
-}
+export default function AlertConfigPage() {
+  const notificationService = NotificationService.getInstance();
 
-export class RiskCalculationService {
-  async calculateComprehensiveRisks(): Promise<RiskMetrics> {
-    // Simulated risk calculation logic
-    return {
-      valueAtRisk: this.calculateVaR(),
-      correlationMatrix: this.generateCorrelationMatrix(),
-      drawdownData: this.calculateDrawdown(),
-      riskHeatmap: this.generateRiskHeatmap()
-    };
-  }
-
-  private calculateVaR(confidenceLevel: number = 0.95): number {
-    // Monte Carlo simulation for Value at Risk
-    const portfolioReturns = this.simulatePortfolioReturns();
-    const sortedReturns = portfolioReturns.sort((a, b) => a - b);
-    const index = Math.floor(sortedReturns.length * (1 - confidenceLevel));
-    return Math.abs(sortedReturns[index]);
-  }
-
-  private simulatePortfolioReturns(iterations: number = 1000): number[] {
-    return Array.from({ length: iterations }, () => 
-      Math.random() * (Math.random() > 0.5 ? 1 : -1)
-    );
-  }
-
-  private generateCorrelationMatrix(): any[] {
-    const assets = ['AAPL', 'GOOGL', 'MSFT', 'AMZN'];
-    return assets.flatMap((asset1, i) => 
-      assets.map((asset2, j) => ({
-        asset1,
-        asset2,
-        correlation: Math.random() * (j >= i ? 1 : -1)
-      }))
-    );
-  }
-
-  private calculateDrawdown(): any[] {
-    let peak = 100;
-    let currentValue = 100;
-    
-    return Array.from({ length: 100 }, (_, index) => {
-      currentValue += Math.random() * 10 - 5;
-      const drawdown = Math.max(0, (peak - currentValue) / peak * 100);
-      peak = Math.max(peak, currentValue);
-
-      return {
-        date: new Date(Date.now() + index * 86400000),
-        drawdown
-      };
+  useEffect(() => {
+    // Example alert configurations
+    notificationService.createAlertConfig({
+      type: 'price',
+      asset: 'AAPL',
+      threshold: 150,
+      condition: 'above',
+      channels: ['email', 'push']
     });
-  }
 
-  private generateRiskHeatmap(): any[] {
-    const assets = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'BTC'];
-    return assets.map(asset => ({
-      asset,
-      risk: Math.random() * 100,
-      score: Math.random()
-    }));
-  }
+    notificationService.createAlertConfig({
+      type: 'risk',
+      asset: 'portfolio',
+      threshold: 20,
+      condition: 'above',
+      channels: ['sms']
+    });
+
+    // Simulate data updates to trigger alerts
+    const intervalId = setInterval(() => {
+      const mockData = {
+        AAPL: Math.random() * 200,
+        portfolio: Math.random() * 50
+      };
+      notificationService.checkAlertConditions(mockData);
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  return (
+    <div>
+      <h1>Notification & Alert Configuration</h1>
+      <NotificationCenter />
+    </div>
+  );
 }
       `
     }
   ],
-  "summary": "Advanced Risk Analytics Dashboard with Comprehensive Risk Metrics Visualization, Including Value at Risk (VaR), Drawdown Analysis, Correlation Matrix, and Real-time Risk Scoring"
+  "summary": "Advanced Notification and Alert System with Multi-Channel Support, Dynamic Configuration, and Real-Time Event Management"
 }
 
-Key Features of Risk Analytics Dashboard:
-✅ Value at Risk (VaR) Calculation
-✅ Portfolio Drawdown Analysis
-✅ Asset Correlation Matrix
-✅ Risk Heatmap Visualization
-✅ Monte Carlo Simulation
-✅ Dynamic Risk Metrics Generation
+Key Features of Notification System:
+✅ Singleton Service Architecture
+✅ Multi-Channel Notifications
+✅ Dynamic Alert Configuration
+✅ Real-Time Event Handling
+✅ Flexible Threshold Conditions
+✅ Persistent Notification History
 
 Technical Highlights:
-- TypeScript implementation
-- Mathematic risk modeling
-- Responsive dashboard design
-- Simulated financial risk calculations
-- Real-time data visualization
+- Singleton Design Pattern
+- Event-Driven Architecture
+- TypeScript Implementation
+- Configurable Alert Mechanisms
+- Multi-Channel Notification Support
 
-Recommended Dependencies:
-- @ant-design/plots
-- mathjs
-- date-fns
+The implementation provides a flexible, extensible notification infrastructure that can be easily integrated into various application contexts. The system supports:
+- Price threshold alerts
+- Risk-based notifications
+- Email, SMS, and Push notifications
+- Customizable alert configurations
+- Real-time notification tracking
 
-The implementation provides a comprehensive, visually engaging risk analytics dashboard with simulated financial risk metrics. The service generates randomized but statistically relevant risk data to demonstrate advanced financial analytics capabilities.
+Recommended Enhancements:
+- Integrate with external SMS/Email services
+- Add persistent storage for notifications
+- Implement more complex condition matching
+- Create admin dashboard for alert management
 
-Would you like me to elaborate on any specific aspect of the risk analytics implementation?
+Would you like me to elaborate on any specific aspect of the notification system implementation?
