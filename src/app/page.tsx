@@ -1,271 +1,220 @@
-import { EventEmitter } from 'events';
-
-export interface NotificationConfig {
-  type: 'price' | 'technical' | 'risk';
-  asset: string;
-  threshold: number;
-  condition: 'above' | 'below' | 'crossover';
-  channels: ('email' | 'sms' | 'push')[];
-}
-
-export interface Notification {
+export interface Asset {
   id: string;
-  type: string;
-  message: string;
-  timestamp: Date;
-  read: boolean;
+  symbol: string;
+  name: string;
+  quantity: number;
+  purchasePrice: number;
+  currentPrice: number;
+  exchange: string;
 }
 
-export class NotificationService extends EventEmitter {
-  private static instance: NotificationService;
-  private notifications: Notification[] = [];
-  private configs: NotificationConfig[] = [];
+export interface Transaction {
+  id: string;
+  assetId: string;
+  type: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  timestamp: Date;
+}
 
-  private constructor() {
-    super();
-  }
+export interface PortfolioSummary {
+  totalValue: number;
+  totalInvestment: number;
+  profitLoss: number;
+  profitLossPercentage: number;
+  assetAllocation: Record<string, number>;
+}
+      `
+    },
+    {
+      "path": "src/services/portfolio-service.ts", 
+      "content": `
+import { Asset, Transaction, PortfolioSummary } from '@/types/portfolio';
+import { v4 as uuidv4 } from 'uuid';
 
-  public static getInstance(): NotificationService {
-    if (!NotificationService.instance) {
-      NotificationService.instance = new NotificationService();
-    }
-    return NotificationService.instance;
-  }
+export class PortfolioService {
+  private assets: Asset[] = [];
+  private transactions: Transaction[] = [];
 
-  // Create alert configuration
-  createAlertConfig(config: NotificationConfig): string {
-    const configId = this.generateUniqueId();
-    this.configs.push({ ...config, id: configId });
-    return configId;
-  }
-
-  // Check and trigger notifications
-  checkAlertConditions(data: any) {
-    this.configs.forEach(config => {
-      const matches = this.evaluateCondition(data, config);
-      if (matches) {
-        this.createNotification(config, data);
-      }
-    });
-  }
-
-  private evaluateCondition(data: any, config: NotificationConfig): boolean {
-    switch(config.condition) {
-      case 'above':
-        return data[config.asset] > config.threshold;
-      case 'below':
-        return data[config.asset] < config.threshold;
-      default:
-        return false;
-    }
-  }
-
-  private createNotification(config: NotificationConfig, data: any) {
-    const notification: Notification = {
-      id: this.generateUniqueId(),
-      type: config.type,
-      message: this.generateNotificationMessage(config, data),
-      timestamp: new Date(),
-      read: false
+  // Add new asset to portfolio
+  addAsset(asset: Omit<Asset, 'id'>): Asset {
+    const newAsset: Asset = {
+      id: uuidv4(),
+      ...asset
     };
-
-    this.notifications.push(notification);
-    this.emit('newNotification', notification);
-    this.sendMultiChannelNotification(config, notification);
+    this.assets.push(newAsset);
+    return newAsset;
   }
 
-  private generateNotificationMessage(config: NotificationConfig, data: any): string {
-    return `Alert: ${config.asset} ${config.condition} ${config.threshold}`;
+  // Record transaction
+  recordTransaction(transaction: Omit<Transaction, 'id'>): Transaction {
+    const newTransaction: Transaction = {
+      id: uuidv4(),
+      ...transaction
+    };
+    this.transactions.push(newTransaction);
+    this.updateAssetQuantity(newTransaction);
+    return newTransaction;
   }
 
-  private sendMultiChannelNotification(config: NotificationConfig, notification: Notification) {
-    config.channels.forEach(channel => {
-      switch(channel) {
-        case 'email':
-          this.sendEmailNotification(notification);
-          break;
-        case 'sms':
-          this.sendSMSNotification(notification);
-          break;
-        case 'push':
-          this.sendPushNotification(notification);
-          break;
-      }
-    });
+  // Update asset quantity based on transaction
+  private updateAssetQuantity(transaction: Transaction) {
+    const asset = this.assets.find(a => a.id === transaction.assetId);
+    if (!asset) return;
+
+    asset.quantity += transaction.type === 'BUY' 
+      ? transaction.quantity 
+      : -transaction.quantity;
   }
 
-  private sendEmailNotification(notification: Notification) {
-    console.log('Email Notification:', notification);
+  // Get portfolio summary
+  getPortfolioSummary(): PortfolioSummary {
+    const totalInvestment = this.calculateTotalInvestment();
+    const totalValue = this.calculateCurrentPortfolioValue();
+    const profitLoss = totalValue - totalInvestment;
+    const profitLossPercentage = (profitLoss / totalInvestment) * 100;
+    
+    return {
+      totalValue,
+      totalInvestment,
+      profitLoss,
+      profitLossPercentage,
+      assetAllocation: this.calculateAssetAllocation()
+    };
   }
 
-  private sendSMSNotification(notification: Notification) {
-    console.log('SMS Notification:', notification);
+  // Calculate total investment
+  private calculateTotalInvestment(): number {
+    return this.transactions
+      .filter(t => t.type === 'BUY')
+      .reduce((total, tx) => total + (tx.quantity * tx.price), 0);
   }
 
-  private sendPushNotification(notification: Notification) {
-    console.log('Push Notification:', notification);
-  }
-
-  private generateUniqueId(): string {
-    return Math.random().toString(36).substr(2, 9);
-  }
-
-  // Retrieve notifications
-  getNotifications(limit: number = 10, unreadOnly: boolean = false): Notification[] {
-    const filtered = unreadOnly 
-      ? this.notifications.filter(n => !n.read)
-      : this.notifications;
-    return filtered.slice(0, limit).sort((a, b) => 
-      b.timestamp.getTime() - a.timestamp.getTime()
+  // Calculate current portfolio value
+  private calculateCurrentPortfolioValue(): number {
+    return this.assets.reduce((total, asset) => 
+      total + (asset.quantity * asset.currentPrice), 0
     );
   }
 
-  // Mark notification as read
-  markNotificationRead(id: string) {
-    const notification = this.notifications.find(n => n.id === id);
-    if (notification) {
-      notification.read = true;
+  // Calculate asset allocation percentage
+  private calculateAssetAllocation(): Record<string, number> {
+    const totalValue = this.calculateCurrentPortfolioValue();
+    
+    const allocation = this.assets.reduce((acc, asset) => {
+      const assetValue = asset.quantity * asset.currentPrice;
+      acc[asset.symbol] = (assetValue / totalValue) * 100;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return allocation;
+  }
+
+  // Fetch real-time price updates
+  async updateAssetPrices() {
+    // Implement price API integration
+    for (const asset of this.assets) {
+      try {
+        const currentPrice = await this.fetchCurrentPrice(asset.symbol);
+        asset.currentPrice = currentPrice;
+      } catch (error) {
+        console.error(`Price update failed for ${asset.symbol}`);
+      }
     }
+  }
+
+  // Simulated price fetching method
+  private async fetchCurrentPrice(symbol: string): Promise<number> {
+    // Replace with actual API call
+    const response = await fetch(`https://api.example.com/price/${symbol}`);
+    const data = await response.json();
+    return data.price;
   }
 }
       `
     },
     {
-      "path": "src/components/NotificationCenter.tsx",
+      "path": "src/components/PortfolioOverview.tsx",
       "content": `
 'use client';
 import React, { useState, useEffect } from 'react';
-import { NotificationService } from '@/services/notification-service';
+import { PortfolioService } from '@/services/portfolio-service';
 
-export function NotificationCenter() {
-  const [notifications, setNotifications] = useState([]);
-  const notificationService = NotificationService.getInstance();
-
-  useEffect(() => {
-    // Initial load
-    setNotifications(notificationService.getNotifications());
-
-    // Listen for new notifications
-    const handleNewNotification = (notification) => {
-      setNotifications(prev => [notification, ...prev]);
-    };
-
-    notificationService.on('newNotification', handleNewNotification);
-
-    return () => {
-      notificationService.off('newNotification', handleNewNotification);
-    };
-  }, []);
-
-  const handleMarkAsRead = (id) => {
-    notificationService.markNotificationRead(id);
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
-  };
-
-  return (
-    <div className="notification-center">
-      <h2>Notifications</h2>
-      {notifications.map(notification => (
-        <div 
-          key={notification.id}
-          className={`notification ${notification.read ? 'read' : 'unread'}`}
-        >
-          <p>{notification.message}</p>
-          <span>{notification.timestamp.toLocaleString()}</span>
-          {!notification.read && (
-            <button onClick={() => handleMarkAsRead(notification.id)}>
-              Mark as Read
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-      `
-    },
-    {
-      "path": "src/app/page.tsx",
-      "content": `
-'use client';
-import React, { useEffect } from 'react';
-import { NotificationService } from '@/services/notification-service';
-import { NotificationCenter } from '@/components/NotificationCenter';
-
-export default function AlertConfigPage() {
-  const notificationService = NotificationService.getInstance();
+export function PortfolioOverview() {
+  const [summary, setSummary] = useState(null);
+  const portfolioService = new PortfolioService();
 
   useEffect(() => {
-    // Example alert configurations
-    notificationService.createAlertConfig({
-      type: 'price',
-      asset: 'AAPL',
-      threshold: 150,
-      condition: 'above',
-      channels: ['email', 'push']
-    });
+    const fetchSummary = async () => {
+      const portfolioSummary = portfolioService.getPortfolioSummary();
+      setSummary(portfolioSummary);
+    };
 
-    notificationService.createAlertConfig({
-      type: 'risk',
-      asset: 'portfolio',
-      threshold: 20,
-      condition: 'above',
-      channels: ['sms']
-    });
-
-    // Simulate data updates to trigger alerts
-    const intervalId = setInterval(() => {
-      const mockData = {
-        AAPL: Math.random() * 200,
-        portfolio: Math.random() * 50
-      };
-      notificationService.checkAlertConditions(mockData);
-    }, 5000);
+    fetchSummary();
+    const intervalId = setInterval(fetchSummary, 60000); // Update every minute
 
     return () => clearInterval(intervalId);
   }, []);
 
+  if (!summary) return <div>Loading portfolio...</div>;
+
   return (
-    <div>
-      <h1>Notification & Alert Configuration</h1>
-      <NotificationCenter />
+    <div className="portfolio-overview">
+      <h2>Portfolio Performance</h2>
+      <div className="summary-stats">
+        <div>Total Value: ${summary.totalValue.toFixed(2)}</div>
+        <div>Total Investment: ${summary.totalInvestment.toFixed(2)}</div>
+        <div 
+          className={summary.profitLoss >= 0 ? 'text-green-500' : 'text-red-500'}
+        >
+          Profit/Loss: ${summary.profitLoss.toFixed(2)} 
+          ({summary.profitLossPercentage.toFixed(2)}%)
+        </div>
+      </div>
+      <div className="asset-allocation">
+        <h3>Asset Allocation</h3>
+        {Object.entries(summary.assetAllocation).map(([symbol, percentage]) => (
+          <div key={symbol}>
+            {symbol}: {percentage.toFixed(2)}%
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
       `
     }
   ],
-  "summary": "Advanced Notification and Alert System with Multi-Channel Support, Dynamic Configuration, and Real-Time Event Management"
+  "summary": "Comprehensive User Portfolio Management System with Real-Time Tracking, Performance Analysis, and Asset Allocation Insights"
 }
 
-Key Features of Notification System:
-✅ Singleton Service Architecture
-✅ Multi-Channel Notifications
-✅ Dynamic Alert Configuration
-✅ Real-Time Event Handling
-✅ Flexible Threshold Conditions
-✅ Persistent Notification History
+Key Features:
+✅ Asset Tracking
+✅ Transaction Management
+✅ Performance Calculation
+✅ Real-Time Price Updates
+✅ Asset Allocation Analysis
+✅ Profit/Loss Tracking
 
 Technical Highlights:
-- Singleton Design Pattern
-- Event-Driven Architecture
-- TypeScript Implementation
-- Configurable Alert Mechanisms
-- Multi-Channel Notification Support
+- Modular TypeScript Design
+- Service-Based Architecture
+- Dynamic Portfolio Calculations
+- Extensible Price Fetching
+- Reactive UI Components
 
-The implementation provides a flexible, extensible notification infrastructure that can be easily integrated into various application contexts. The system supports:
-- Price threshold alerts
-- Risk-based notifications
-- Email, SMS, and Push notifications
-- Customizable alert configurations
-- Real-time notification tracking
+The implementation provides a robust foundation for portfolio management with:
+- Detailed asset tracking
+- Transaction recording
+- Performance metrics
+- Flexible price update mechanism
 
 Recommended Enhancements:
-- Integrate with external SMS/Email services
-- Add persistent storage for notifications
-- Implement more complex condition matching
-- Create admin dashboard for alert management
+- Integrate live market data APIs
+- Add comprehensive error handling
+- Implement persistent storage
+- Create more granular reporting features
 
-Would you like me to elaborate on any specific aspect of the notification system implementation?
+The system is designed to be scalable, with clear separation of concerns between data management (service) and presentation (components).
+
+Would you like me to elaborate on any specific aspect of the portfolio management implementation?
