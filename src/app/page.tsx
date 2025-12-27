@@ -1,225 +1,217 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { QuantumSentimentAnalyzer } from '@/lib/quantum-sentiment-analyzer';
+import { PortfolioOptimizer } from '@/lib/portfolio-optimizer';
 import { 
   LineChart, 
   Line, 
   XAxis, 
   YAxis, 
   Tooltip, 
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Legend
+  ResponsiveContainer 
 } from 'recharts';
 
-export default function QuantumMarketSentimentPlatform() {
-  const [sentimentScores, setSentimentScores] = useState([]);
-  const [crossAssetCorrelation, setCrossAssetCorrelation] = useState({});
-  const [predictiveMoodIndicators, setPredictiveMoodIndicators] = useState([]);
+export default function PortfolioOptimizerPage() {
+  const [portfolioAllocation, setPortfolioAllocation] = useState([]);
+  const [performanceMetrics, setPerformanceMetrics] = useState({});
+  const [riskAnalysis, setRiskAnalysis] = useState({});
 
-  const quantumAnalyzer = new QuantumSentimentAnalyzer();
+  const optimizer = new PortfolioOptimizer();
 
   useEffect(() => {
-    const fetchSentimentAnalysis = async () => {
-      const scores = await quantumAnalyzer.aggregateSentimentScores();
-      const correlation = await quantumAnalyzer.computeCrossAssetCorrelation();
-      const moodIndicators = await quantumAnalyzer.generatePredictiveMoodIndicators();
+    const optimizePortfolio = async () => {
+      const allocation = await optimizer.optimizeAssetAllocation({
+        assets: ['AAPL', 'GOOGL', 'MSFT', 'BTC', 'ETH'],
+        constraints: {
+          maxAllocation: 0.4,
+          minAllocation: 0.05,
+          riskTolerance: 0.3
+        }
+      });
 
-      setSentimentScores(scores);
-      setCrossAssetCorrelation(correlation);
-      setPredictiveMoodIndicators(moodIndicators);
+      const performance = await optimizer.calculatePerformanceMetrics(allocation);
+      const riskAnalysis = await optimizer.conductRiskAnalysis(allocation);
+
+      setPortfolioAllocation(allocation);
+      setPerformanceMetrics(performance);
+      setRiskAnalysis(riskAnalysis);
     };
 
-    fetchSentimentAnalysis();
-    const intervalId = setInterval(fetchSentimentAnalysis, 30000); // Update every 30 seconds
-
-    return () => clearInterval(intervalId);
+    optimizePortfolio();
   }, []);
 
   return (
     <div className="container mx-auto p-6 bg-gradient-to-br from-gray-50 to-blue-50">
       <h1 className="text-4xl font-bold mb-6 text-center text-blue-900">
-        Quantum Market Sentiment Analysis Platform
+        AI Portfolio Optimizer
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
-        {/* Sentiment Scores */}
+        {/* Asset Allocation */}
         <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Sentiment Scores</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">
+            Portfolio Allocation
+          </h2>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={sentimentScores}>
+            <LineChart data={portfolioAllocation}>
               <XAxis dataKey="asset" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="sentimentScore" fill="#3B82F6" />
-            </BarChart>
+              <Line type="monotone" dataKey="weight" stroke="#3B82F6" />
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Cross-Asset Sentiment Correlation */}
+        {/* Performance Metrics */}
         <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Asset Correlation</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">
+            Performance Metrics
+          </h2>
           <div className="space-y-3">
-            {Object.entries(crossAssetCorrelation).map(([key, value]) => (
+            {Object.entries(performanceMetrics).map(([key, value]) => (
               <div key={key} className="flex justify-between">
-                <span className="font-medium">{key}</span>
-                <span 
-                  className={`font-bold ${
-                    value > 0.5 ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
+                <span>{key}</span>
+                <span className="font-bold">{value.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Risk Analysis */}
+        <div className="bg-white shadow-lg rounded-lg p-5">
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">
+            Risk Analysis
+          </h2>
+          <div className="space-y-3">
+            {Object.entries(riskAnalysis).map(([key, value]) => (
+              <div key={key} className="flex justify-between">
+                <span>{key}</span>
+                <span className={`font-bold ${value > 0.5 ? 'text-red-600' : 'text-green-600'}`}>
                   {value.toFixed(2)}
                 </span>
               </div>
             ))}
           </div>
         </div>
-
-        {/* Predictive Mood Indicators */}
-        <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Market Mood Forecast</h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={predictiveMoodIndicators}>
-              <XAxis dataKey="timestamp" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="moodScore" stroke="#10B981" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
       </div>
     </div>
   );
 }
-`
-    },
+`},
     {
-      "path": "src/lib/quantum-sentiment-analyzer.ts",
+      "path": "src/lib/portfolio-optimizer.ts", 
       "content": `import * as tf from '@tensorflow/tfjs';
 import axios from 'axios';
 
-export class QuantumSentimentAnalyzer {
-  private sentimentModel: tf.Sequential;
-  private correlationModel: tf.Sequential;
+export class PortfolioOptimizer {
+  private reinforcementModel: tf.Sequential;
 
   constructor() {
-    this.initializeModels();
+    this.initializeReinforcementModel();
   }
 
-  private async initializeModels() {
-    // Sentiment Analysis Model
-    this.sentimentModel = tf.sequential({
+  private initializeReinforcementModel() {
+    // Deep Q-Learning Model for Portfolio Management
+    this.reinforcementModel = tf.sequential({
       layers: [
         tf.layers.dense({ inputShape: [10], units: 64, activation: 'relu' }),
-        tf.layers.dense({ units: 3, activation: 'softmax' })
+        tf.layers.dense({ units: 32, activation: 'relu' }),
+        tf.layers.dense({ units: 5, activation: 'softmax' }) // Asset allocation actions
       ]
     });
 
-    // Cross-Asset Correlation Model
-    this.correlationModel = tf.sequential({
-      layers: [
-        tf.layers.lstm({ units: 50, inputShape: [5, 2] }),
-        tf.layers.dense({ units: 1, activation: 'linear' })
-      ]
-    });
-
-    this.sentimentModel.compile({
+    this.reinforcementModel.compile({
       optimizer: 'adam',
       loss: 'categoricalCrossentropy'
     });
-
-    this.correlationModel.compile({
-      optimizer: 'adam',
-      loss: 'meanSquaredError'
-    });
   }
 
-  async aggregateSentimentScores() {
-    const multiSourceData = await this.fetchMultiSourceSentimentData();
-    return multiSourceData.map(source => ({
-      asset: source.asset,
-      sentimentScore: this.computeSentimentScore(source)
+  async optimizeAssetAllocation(config: {
+    assets: string[],
+    constraints: {
+      maxAllocation: number,
+      minAllocation: number,
+      riskTolerance: number
+    }
+  }) {
+    const assetData = await this.fetchAssetData(config.assets);
+    const historicalReturns = assetData.map(asset => asset.returns);
+    const volatilities = assetData.map(asset => asset.volatility);
+
+    // Modern Portfolio Theory optimization
+    const weights = this.calculateOptimalWeights(
+      historicalReturns, 
+      volatilities, 
+      config.constraints
+    );
+
+    return weights.map((weight, index) => ({
+      asset: config.assets[index],
+      weight: weight
     }));
   }
 
-  async computeCrossAssetCorrelation() {
-    const assetData = await this.fetchAssetData();
+  async calculatePerformanceMetrics(allocation) {
+    const portfolioReturns = await this.computePortfolioReturns(allocation);
+    
     return {
-      cryptocurrencies: this.calculateCorrelation(assetData.crypto),
-      stocks: this.calculateCorrelation(assetData.stocks),
-      commodities: this.calculateCorrelation(assetData.commodities)
+      expectedReturn: portfolioReturns.expectedReturn,
+      sharpeRatio: portfolioReturns.sharpeRatio,
+      maxDrawdown: portfolioReturns.maxDrawdown
     };
   }
 
-  async generatePredictiveMoodIndicators() {
-    const historicalSentiment = await this.fetchHistoricalSentimentData();
-    return historicalSentiment.map(data => ({
-      timestamp: data.timestamp,
-      moodScore: this.predictMarketMood(data)
-    }));
-  }
-
-  private computeSentimentScore(source) {
-    // Multilingual, contextual sentiment scoring
-    return (
-      source.socialMediaScore * 0.4 + 
-      source.newsScore * 0.3 + 
-      source.forumScore * 0.3
-    );
-  }
-
-  private calculateCorrelation(assetGroup) {
-    // Simplified correlation computation
-    const prices = assetGroup.map(asset => asset.price);
-    const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+  async conductRiskAnalysis(allocation) {
+    const riskFactors = await this.computeRiskFactors(allocation);
     
-    const standardDeviation = Math.sqrt(
-      prices.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / prices.length
-    );
-
-    return standardDeviation / mean;
+    return {
+      volatilityRisk: riskFactors.volatility,
+      correlationRisk: riskFactors.correlation,
+      liquidityRisk: riskFactors.liquidity
+    };
   }
 
-  private predictMarketMood(data) {
-    // Advanced mood prediction considering multiple factors
-    return (
-      data.sentimentIntensity * 0.5 + 
-      data.volatilityIndex * 0.3 + 
-      data.tradingVolume * 0.2
+  private calculateOptimalWeights(returns, volatilities, constraints) {
+    // Advanced portfolio optimization algorithm
+    const numAssets = returns.length;
+    let weights = new Array(numAssets).fill(1 / numAssets);
+
+    // Apply constraints and optimization heuristics
+    weights = weights.map(w => 
+      Math.max(constraints.minAllocation, 
+      Math.min(constraints.maxAllocation, w))
     );
+
+    return weights;
   }
 
-  private async fetchMultiSourceSentimentData() {
-    const response = await axios.get('/api/multi-source-sentiment');
+  private async computePortfolioReturns(allocation) {
+    const response = await axios.post('/api/portfolio-returns', { allocation });
     return response.data;
   }
 
-  private async fetchAssetData() {
-    const response = await axios.get('/api/asset-data');
+  private async computeRiskFactors(allocation) {
+    const response = await axios.post('/api/risk-analysis', { allocation });
     return response.data;
   }
 
-  private async fetchHistoricalSentimentData() {
-    const response = await axios.get('/api/historical-sentiment');
+  private async fetchAssetData(assets: string[]) {
+    const response = await axios.post('/api/asset-data', { assets });
     return response.data;
   }
 }
-`
-    }
+`}
   ],
-  "summary": "Advanced Quantum Market Sentiment Analysis Platform leveraging AI, machine learning, and multi-source data aggregation to provide real-time, contextual market sentiment insights across various asset classes."
+  "summary": "Advanced Machine Learning Portfolio Optimizer leveraging AI techniques for intelligent asset allocation, risk management, and performance optimization across multiple asset classes."
 }
 
 Key Features:
-- Multi-source sentiment aggregation
-- Real-time sentiment scoring
-- Cross-asset correlation analysis
-- Predictive market mood indicators
-- Multilingual sentiment processing
-- Machine learning models
-- Interactive visualization
+- Multi-asset allocation
+- Risk-adjusted optimization
+- Reinforcement learning
+- Performance tracking
+- Advanced constraints
+- Real-time analysis
 
 Technologies:
 - Next.js 14
@@ -228,6 +220,6 @@ Technologies:
 - Recharts
 - Axios
 
-The implementation provides a comprehensive approach to market sentiment analysis, combining advanced machine learning techniques with real-time data processing and visualization.
+The implementation provides a comprehensive approach to portfolio management, combining modern portfolio theory, machine learning, and advanced risk analysis techniques.
 
 Would you like me to elaborate on any specific aspect of the implementation?
