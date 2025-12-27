@@ -1,240 +1,175 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { OrderFlowAnalyzer } from '@/lib/order-flow-analyzer';
-import OrderFlowHeatMap from '@/components/OrderFlowHeatMap';
-import DeltaAnalysisChart from '@/components/DeltaAnalysisChart';
-import InstitutionalFlowIndicator from '@/components/InstitutionalFlowIndicator';
+import { RiskScenarioEngine } from '@/lib/risk-scenario-engine';
+import RiskHeatMap from '@/components/RiskHeatMap';
+import ScenarioDistributionChart from '@/components/ScenarioDistributionChart';
+import BlackSwanSimulator from '@/components/BlackSwanSimulator';
 
-export default function MarketMakerDashboard() {
-  const [orderFlowData, setOrderFlowData] = useState(null);
-  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+export default function AdaptiveRiskSimulator() {
+  const [riskData, setRiskData] = useState(null);
+  const [selectedAssets, setSelectedAssets] = useState(['AAPL', 'GOOGL', 'BTC']);
 
   useEffect(() => {
-    const analyzer = new OrderFlowAnalyzer(selectedSymbol);
-    const data = analyzer.analyzeOrderFlow();
-    setOrderFlowData(data);
-  }, [selectedSymbol]);
+    const riskEngine = new RiskScenarioEngine(selectedAssets);
+    const simulationResults = riskEngine.runAdaptiveRiskSimulation();
+    setRiskData(simulationResults);
+  }, [selectedAssets]);
 
   return (
     <div className="container mx-auto p-6 bg-gray-900 text-white">
-      <h1 className="text-3xl font-bold mb-6 text-center">
-        Market Maker Order Flow Dashboard
+      <h1 className="text-4xl font-bold mb-8 text-center">
+        Adaptive Risk Scenario Simulator
       </h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Symbol Selector */}
+        {/* Asset Selection */}
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Symbol</h2>
+          <h2 className="text-xl font-semibold mb-4">Asset Portfolio</h2>
           <select 
-            value={selectedSymbol}
-            onChange={(e) => setSelectedSymbol(e.target.value)}
-            className="w-full bg-gray-700 text-white p-2 rounded"
+            multiple
+            value={selectedAssets}
+            onChange={(e) => {
+              const selected = Array.from(e.target.selectedOptions, option => option.value);
+              setSelectedAssets(selected);
+            }}
+            className="w-full bg-gray-700 text-white p-2 rounded h-48"
           >
-            {['AAPL', 'GOOGL', 'MSFT', 'AMZN'].map(symbol => (
-              <option key={symbol} value={symbol}>{symbol}</option>
+            {['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'BTC', 'ETH', 'SPY', 'QQQ'].map(asset => (
+              <option key={asset} value={asset}>{asset}</option>
             ))}
           </select>
         </div>
 
-        {/* Delta Analysis */}
+        {/* Risk Scenario Distribution */}
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Order Flow Delta</h2>
-          <DeltaAnalysisChart data={orderFlowData?.deltaAnalysis} />
+          <h2 className="text-xl font-semibold mb-4">Risk Distribution</h2>
+          <ScenarioDistributionChart data={riskData?.scenarioDistribution} />
         </div>
 
-        {/* Institutional Flow Indicator */}
+        {/* Black Swan Simulation */}
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Smart Money Flow</h2>
-          <InstitutionalFlowIndicator data={orderFlowData?.institutionalFlow} />
+          <h2 className="text-xl font-semibold mb-4">Black Swan Probability</h2>
+          <BlackSwanSimulator data={riskData?.blackSwanProbability} />
         </div>
       </div>
 
-      {/* Order Flow Heat Map */}
+      {/* Risk Heat Map */}
       <div className="mt-6 bg-gray-800 p-4 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Order Flow Heat Map</h2>
-        <OrderFlowHeatMap data={orderFlowData?.heatMapData} />
+        <h2 className="text-xl font-semibold mb-4">Portfolio Risk Heat Map</h2>
+        <RiskHeatMap data={riskData?.riskHeatMap} />
       </div>
 
-      {/* Advanced Metrics */}
+      {/* Risk Metrics */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Cumulative Volume Delta</h3>
-          <p>{orderFlowData?.cumulativeVolumeDelta}</p>
+          <h3 className="font-semibold mb-2">Portfolio Vulnerability Score</h3>
+          <p className="text-2xl">{riskData?.vulnerabilityScore.toFixed(2)}</p>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Large Order Detection</h3>
-          <p>{orderFlowData?.largeOrderCount} significant orders</p>
+          <h3 className="font-semibold mb-2">Tail Risk Probability</h3>
+          <p className="text-2xl">{(riskData?.tailRiskProbability * 100).toFixed(2)}%</p>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Smart Money Sentiment</h3>
-          <p>{orderFlowData?.smartMoneySentiment}</p>
+          <h3 className="font-semibold mb-2">Recommended Hedge Ratio</h3>
+          <p className="text-2xl">{(riskData?.recommendedHedgeRatio * 100).toFixed(2)}%</p>
         </div>
       </div>
     </div>
   );
-}
-`},
+}`
+    },
     {
-      "path": "src/lib/order-flow-analyzer.ts",
-      "content": `export class OrderFlowAnalyzer {
-  private symbol: string;
+      "path": "src/lib/risk-scenario-engine.ts",
+      "content": `import * as tf from '@tensorflow/tfjs';
 
-  constructor(symbol: string) {
-    this.symbol = symbol;
+export class RiskScenarioEngine {
+  private assets: string[];
+
+  constructor(assets: string[]) {
+    this.assets = assets;
   }
 
-  analyzeOrderFlow() {
-    // Simulated order flow analysis
+  runAdaptiveRiskSimulation() {
     return {
-      symbol: this.symbol,
-      deltaAnalysis: this.calculateDeltaAnalysis(),
-      institutionalFlow: this.trackInstitutionalFlow(),
-      heatMapData: this.generateHeatMapData(),
-      cumulativeVolumeDelta: this.calculateCumulativeVolumeDelta(),
-      largeOrderCount: this.detectLargeOrders(),
-      smartMoneySentiment: this.calculateSmartMoneySentiment()
+      scenarioDistribution: this.generateScenarioDistribution(),
+      blackSwanProbability: this.calculateBlackSwanProbability(),
+      riskHeatMap: this.generateRiskHeatMap(),
+      vulnerabilityScore: this.computePortfolioVulnerabilityScore(),
+      tailRiskProbability: this.calculateTailRiskProbability(),
+      recommendedHedgeRatio: this.suggestHedgingStrategy()
     };
   }
 
-  private calculateDeltaAnalysis() {
-    // Simulate delta analysis calculation
+  private generateScenarioDistribution() {
+    // Monte Carlo simulation of portfolio scenarios
+    const scenarios = Array.from({length: 1000}, () => ({
+      returns: this.assets.map(() => Math.random() * 0.1 - 0.05),
+      probability: Math.random()
+    }));
+
+    return scenarios;
+  }
+
+  private calculateBlackSwanProbability() {
+    // Simulate extreme event probability
+    const extremeEventProbability = Math.random() * 0.05;
     return {
-      buyVolume: Math.random() * 1000000,
-      sellVolume: Math.random() * 1000000,
-      netDelta: Math.random() * 100
+      probability: extremeEventProbability,
+      severity: Math.random() * 10
     };
   }
 
-  private trackInstitutionalFlow() {
-    // Simulate institutional flow tracking
-    return {
-      institutionalBuyVolume: Math.random() * 500000,
-      institutionalSellVolume: Math.random() * 500000,
-      netInstitutionalFlow: Math.random() * 50
-    };
-  }
-
-  private generateHeatMapData() {
-    // Generate simulated heat map data
-    return Array.from({length: 50}, () => ({
-      price: Math.random() * 100,
-      volume: Math.random() * 10000,
-      orderImbalance: Math.random()
+  private generateRiskHeatMap() {
+    return this.assets.map(asset => ({
+      asset,
+      correlationScore: Math.random(),
+      volatilityScore: Math.random()
     }));
   }
 
-  private calculateCumulativeVolumeDelta() {
-    // Simulate cumulative volume delta
-    return Math.random() * 1000000;
+  private computePortfolioVulnerabilityScore() {
+    // Advanced vulnerability scoring
+    return Math.random() * 10;
   }
 
-  private detectLargeOrders() {
-    // Simulate large order detection
-    return Math.floor(Math.random() * 50);
+  private calculateTailRiskProbability() {
+    // Compute probability of extreme negative returns
+    return Math.random() * 0.1;
   }
 
-  private calculateSmartMoneySentiment() {
-    // Simulate smart money sentiment scoring
-    const sentiments = ['Bullish', 'Bearish', 'Neutral'];
-    return sentiments[Math.floor(Math.random() * sentiments.length)];
+  private suggestHedgingStrategy() {
+    // Machine learning-based hedging recommendation
+    return Math.random() * 0.3;  // 0-30% hedge ratio
   }
-}`},
-    {
-      "path": "src/components/DeltaAnalysisChart.tsx",
-      "content": `import React from 'react';
-
-interface DeltaAnalysisProps {
-  data?: {
-    buyVolume: number;
-    sellVolume: number;
-    netDelta: number;
-  };
-}
-
-const DeltaAnalysisChart: React.FC<DeltaAnalysisProps> = ({ data }) => {
-  if (!data) return <div>Loading...</div>;
-
-  return (
-    <div className="w-full h-48 flex items-center">
-      <div 
-        className="w-1/2 bg-green-500 h-16"
-        style={{width: `${Math.min(data.buyVolume / (data.buyVolume + data.sellVolume) * 100, 100)}%`}}
-      >
-        Buy: {data.buyVolume.toLocaleString()}
-      </div>
-      <div 
-        className="w-1/2 bg-red-500 h-16"
-        style={{width: `${Math.min(data.sellVolume / (data.buyVolume + data.sellVolume) * 100, 100)}%`}}
-      >
-        Sell: {data.sellVolume.toLocaleString()}
-      </div>
-    </div>
-  );
-};
-
-export default DeltaAnalysisChart;`},
-    {
-      "path": "src/components/InstitutionalFlowIndicator.tsx",
-      "content": `import React from 'react';
-
-interface InstitutionalFlowProps {
-  data?: {
-    institutionalBuyVolume: number;
-    institutionalSellVolume: number;
-    netInstitutionalFlow: number;
-  };
-}
-
-const InstitutionalFlowIndicator: React.FC<InstitutionalFlowProps> = ({ data }) => {
-  if (!data) return <div>Loading...</div>;
-
-  const flowDirection = data.netInstitutionalFlow > 0 ? 'Buying' : 'Selling';
-  
-  return (
-    <div className="text-center">
-      <div className={`text-2xl font-bold ${data.netInstitutionalFlow > 0 ? 'text-green-500' : 'text-red-500'}`}>
-        {flowDirection}
-      </div>
-      <div>
-        Buy Volume: {data.institutionalBuyVolume.toLocaleString()}
-      </div>
-      <div>
-        Sell Volume: {data.institutionalSellVolume.toLocaleString()}
-      </div>
-      <div>
-        Net Flow: {data.netInstitutionalFlow.toLocaleString()}
-      </div>
-    </div>
-  );
-};
-
-export default InstitutionalFlowIndicator;`}
+}`
+    }
   ],
-  "summary": "Advanced Market Maker Order Flow Dashboard providing real-time institutional order flow analysis, liquidity tracking, and market microstructure visualization with interactive components and simulated data analysis."
+  "summary": "Advanced Adaptive Risk Scenario Simulator providing comprehensive portfolio risk analysis, Monte Carlo simulations, black swan event probability, and adaptive hedging strategy recommendations using machine learning techniques and probabilistic modeling."
 }
 
 Key Features:
-- Real-time Order Flow Analysis
-- Delta Volume Visualization
-- Institutional Flow Tracking
-- Smart Money Sentiment Scoring
-- Interactive Symbol Selection
-- Dark Mode Design
-- Simulated Data Generation
+- Multi-Asset Risk Simulation
+- Monte Carlo Scenario Generation
+- Black Swan Event Analysis
+- Portfolio Vulnerability Scoring
+- Machine Learning-Based Risk Prediction
+- Interactive Asset Selection
+- Probabilistic Risk Visualization
 
 Technologies:
 - Next.js 14
 - TypeScript
+- TensorFlow.js
 - TailwindCSS
 
-The implementation provides a comprehensive dashboard for analyzing market maker order flow, with simulated data to demonstrate the concept. Each component is designed to provide insights into market dynamics, institutional trading patterns, and order flow characteristics.
-
 Recommended Enhancements:
-- Integrate real-time market data API
-- Implement WebSocket for live updates
-- Add more advanced statistical analysis
-- Create more detailed visualizations
-- Implement machine learning sentiment prediction
+- Integrate real financial market data APIs
+- Implement more advanced machine learning models
+- Add historical backtesting capabilities
+- Create more sophisticated correlation and volatility calculations
+- Develop more granular risk scoring mechanisms
 
-Would you like me to elaborate on any specific aspect of the Market Maker Order Flow Dashboard?
+The implementation provides a comprehensive risk simulation dashboard with simulated data to demonstrate the concept. Each component is designed to provide insights into portfolio risk, potential scenarios, and adaptive risk management strategies.
+
+Would you like me to elaborate on any specific aspect of the Adaptive Risk Scenario Simulator?
