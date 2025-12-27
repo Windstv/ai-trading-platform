@@ -1,34 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { RiskAnalysisService } from '../services/RiskAnalysisService';
+import React, { useState } from 'react'
+import RiskHeatmap from './visualizations/RiskHeatmap'
+import PortfolioRiskDecomposition from './visualizations/PortfolioRiskDecomposition'
+import CorrelationNetwork from './visualizations/CorrelationNetwork'
+import StressTestScenarios from './visualizations/StressTestScenarios'
+import MonteCarloSimulation from './visualizations/MonteCarloSimulation'
 
-const RiskDashboard: React.FC = () => {
-    const [riskAnalysis, setRiskAnalysis] = useState(null);
-    const riskService = new RiskAnalysisService();
+interface RiskMetrics {
+  totalRisk: number
+  volatility: number
+  sharpeRatio: number
+  correlationMatrix: number[][]
+}
 
-    useEffect(() => {
-        async function fetchRiskAnalysis() {
-            const marketData = await fetchMarketData();
-            const analysis = await riskService.analyzeMarketRisk(marketData);
-            setRiskAnalysis(analysis);
-        }
+export default function RiskDashboard() {
+  const [riskMetrics, setRiskMetrics] = useState<RiskMetrics>({
+    totalRisk: 0.45,
+    volatility: 0.22,
+    sharpeRatio: 1.2,
+    correlationMatrix: [[1, 0.5], [0.5, 1]]
+  })
 
-        fetchRiskAnalysis();
-        const interval = setInterval(fetchRiskAnalysis, 15 * 60 * 1000); // Refresh every 15 minutes
-        return () => clearInterval(interval);
-    }, []);
-
-    return (
-        <div className="risk-dashboard">
-            {riskAnalysis && (
-                <>
-                    <div>Risk Score: {riskAnalysis.riskScore}</div>
-                    <div>Volatility Forecast: {riskAnalysis.volatilityForecast}</div>
-                    <div>Drawdown Probability: {riskAnalysis.drawdownProbability}</div>
-                    <div>Recommended Action: {riskAnalysis.recommendedAction}</div>
-                </>
-            )}
-        </div>
-    );
-};
-
-export default RiskDashboard;
+  return (
+    <div className="p-6 bg-gray-100 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6">Risk Visualization Engine</h1>
+      
+      <div className="grid grid-cols-2 gap-6">
+        <RiskHeatmap data={riskMetrics} />
+        <PortfolioRiskDecomposition data={riskMetrics} />
+        <CorrelationNetwork data={riskMetrics.correlationMatrix} />
+        <StressTestScenarios />
+        <MonteCarloSimulation />
+      </div>
+    </div>
+  )
+}
