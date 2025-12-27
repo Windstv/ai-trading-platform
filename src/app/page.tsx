@@ -1,284 +1,195 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { RiskPredictor } from '@/lib/risk-predictor';
 import PortfolioOptimizer from '@/components/PortfolioOptimizer';
-import AssetAllocationChart from '@/components/AssetAllocationChart';
-import PerformanceAnalytics from '@/components/PerformanceAnalytics';
-import RiskMetricsPanel from '@/components/RiskMetricsPanel';
+import RiskVisualization from '@/components/RiskVisualization';
 
-export interface Asset {
-    symbol: string;
-    name: string;
-    price: number;
-    weight: number;
-    expectedReturn: number;
-    volatility: number;
-    correlation?: number;
-}
+export default function PortfolioPage() {
+  const [portfolioData, setPortfolioData] = useState({
+    assets: [
+      { symbol: 'AAPL', allocation: 25, risk: 0.4 },
+      { symbol: 'GOOGL', allocation: 20, risk: 0.5 },
+      { symbol: 'AMZN', allocation: 15, risk: 0.6 },
+      { symbol: 'BTC', allocation: 10, risk: 0.8 },
+      { symbol: 'ETH', allocation: 15, risk: 0.7 },
+      { symbol: 'BONDS', allocation: 15, risk: 0.2 }
+    ],
+    totalRisk: 0.5,
+    expectedReturn: 8.5,
+    sharpeRatio: 1.2
+  });
 
-export default function MachineLearningPortfolioPage() {
-    const [assets, setAssets] = useState<Asset[]>([
-        { 
-            symbol: 'SPY', 
-            name: 'S&P 500 ETF', 
-            price: 450, 
-            weight: 0.3, 
-            expectedReturn: 0.10, 
-            volatility: 0.15,
-            correlation: 1.0
-        },
-        { 
-            symbol: 'QQQ', 
-            name: 'NASDAQ ETF', 
-            price: 350, 
-            weight: 0.25, 
-            expectedReturn: 0.12, 
-            volatility: 0.18,
-            correlation: 0.85
-        }
-    ]);
+  const riskPredictor = new RiskPredictor({
+    assets: portfolioData.assets.map(a => a.symbol),
+    timeframe: 'daily',
+    riskModel: 'LSTM'
+  });
 
-    return (
-        <div className="container mx-auto p-6 bg-gray-50">
-            <h1 className="text-4xl font-bold mb-8 text-center text-blue-600">
-                ML Portfolio Optimizer
-            </h1>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-2">
-                    <PortfolioOptimizer 
-                        assets={assets} 
-                        onAssetsUpdate={setAssets}
-                    />
-                </div>
-                
-                <AssetAllocationChart assets={assets} />
-            </div>
-            
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <PerformanceAnalytics assets={assets} />
-                <RiskMetricsPanel assets={assets} />
-            </div>
+  useEffect(() => {
+    const optimizePortfolio = async () => {
+      try {
+        const analysis = await riskPredictor.analyzePortfolioRisk();
+        // Update portfolio based on risk analysis
+        setPortfolioData(prev => ({
+          ...prev,
+          totalRisk: analysis.riskScore,
+          expectedReturn: analysis.expectedReturn || 8.5
+        }));
+      } catch (error) {
+        console.error('Portfolio Optimization Error', error);
+      }
+    };
+
+    optimizePortfolio();
+  }, []);
+
+  return (
+    <div className="container mx-auto p-8 bg-gray-50">
+      <h1 className="text-4xl font-bold mb-8 text-center text-blue-700">
+        AI Portfolio Optimizer
+      </h1>
+
+      <div className="grid grid-cols-12 gap-6">
+        <div className="col-span-7">
+          <PortfolioOptimizer 
+            assets={portfolioData.assets}
+            onOptimize={(newAssets) => setPortfolioData(prev => ({
+              ...prev,
+              assets: newAssets
+            }))}
+          />
         </div>
-    );
+        
+        <div className="col-span-5">
+          <RiskVisualization 
+            totalRisk={portfolioData.totalRisk}
+            expectedReturn={portfolioData.expectedReturn}
+            sharpeRatio={portfolioData.sharpeRatio}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
-            `
-        },
-        {
-            "path": "src/components/PortfolioOptimizer.tsx",
-            "content": `
-'use client';
-
+`
+    },
+    {
+      "path": "src/components/PortfolioOptimizer.tsx",
+      "content": `
 import React, { useState } from 'react';
-import { Asset } from '@/app/portfolio/page';
 import { 
-    optimizePortfolioWeights,
-    performMonteCarloPrediction
-} from '@/lib/ml-portfolio-strategies';
+  performModernPortfolioTheoryOptimization,
+  rebalancePortfolio 
+} from '@/lib/portfolio-optimization';
+
+interface Asset {
+  symbol: string;
+  allocation: number;
+  risk: number;
+}
 
 interface PortfolioOptimizerProps {
-    assets: Asset[];
-    onAssetsUpdate: (assets: Asset[]) => void;
+  assets: Asset[];
+  onOptimize: (assets: Asset[]) => void;
 }
 
-export default function PortfolioOptimizer({ 
-    assets, 
-    onAssetsUpdate 
-}: PortfolioOptimizerProps) {
-    const [riskTolerance, setRiskTolerance] = useState(0.5);
-    const [optimizationMethod, setOptimizationMethod] = useState('meanVariance');
+const PortfolioOptimizer: React.FC<PortfolioOptimizerProps> = ({ 
+  assets, 
+  onOptimize 
+}) => {
+  const [riskTolerance, setRiskTolerance] = useState(0.5);
 
-    const handleOptimizePortfolio = () => {
-        const optimizedAssets = optimizePortfolioWeights(
-            assets, 
-            optimizationMethod, 
-            riskTolerance
-        );
-        onAssetsUpdate(optimizedAssets);
-    };
+  const handleOptimize = () => {
+    const optimizedAssets = performModernPortfolioTheoryOptimization(
+      assets, 
+      riskTolerance
+    );
+    onOptimize(optimizedAssets);
+  };
 
-    const handleMonteCarloSimulation = () => {
-        const simulationResults = performMonteCarloPrediction(assets);
-        console.log("Monte Carlo Simulation Results:", simulationResults);
-    };
+  const handleRebalance = () => {
+    const rebalancedAssets = rebalancePortfolio(assets);
+    onOptimize(rebalancedAssets);
+  };
 
-    return (
-        <div className="bg-white shadow-lg rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-4">
-                Portfolio Optimization Engine
-            </h2>
-
-            <div className="flex space-x-4 mb-4">
-                <select 
-                    value={optimizationMethod}
-                    onChange={(e) => setOptimizationMethod(e.target.value)}
-                    className="border rounded p-2 flex-grow"
-                >
-                    <option value="meanVariance">Mean-Variance</option>
-                    <option value="riskParity">Risk Parity</option>
-                    <option value="blackLitterman">Black-Litterman</option>
-                </select>
-
-                <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.1" 
-                    value={riskTolerance}
-                    onChange={(e) => setRiskTolerance(parseFloat(e.target.value))}
-                    className="flex-grow"
-                />
-                <span>{(riskTolerance * 100).toFixed(0)}% Risk</span>
-            </div>
-
-            <div className="flex space-x-4">
-                <button 
-                    onClick={handleOptimizePortfolio}
-                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-                >
-                    Optimize Portfolio
-                </button>
-                <button 
-                    onClick={handleMonteCarloSimulation}
-                    className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                >
-                    Monte Carlo Simulation
-                </button>
-            </div>
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-semibold mb-4">Portfolio Configuration</h2>
+      
+      <div className="mb-4">
+        <label className="block mb-2">Risk Tolerance</label>
+        <input 
+          type="range" 
+          min="0" 
+          max="1" 
+          step="0.1" 
+          value={riskTolerance}
+          onChange={(e) => setRiskTolerance(Number(e.target.value))}
+          className="w-full"
+        />
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>Conservative</span>
+          <span>Aggressive</span>
         </div>
-    );
-}
-            `
-        },
-        {
-            "path": "src/lib/ml-portfolio-strategies.ts",
-            "content": `
-import { Asset } from '@/app/portfolio/page';
+      </div>
 
-export function optimizePortfolioWeights(
-    assets: Asset[], 
-    method: string, 
-    riskTolerance: number
-): Asset[] {
-    switch(method) {
-        case 'riskParity':
-            return riskParityAllocation(assets);
-        case 'blackLitterman':
-            return blackLittermanAllocation(assets, riskTolerance);
-        default:
-            return meanVarianceOptimization(assets, riskTolerance);
+      <div className="grid grid-cols-2 gap-4">
+        <button 
+          onClick={handleOptimize}
+          className="bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+        >
+          Optimize Portfolio
+        </button>
+        <button 
+          onClick={handleRebalance}
+          className="bg-green-500 text-white py-2 rounded hover:bg-green-600"
+        >
+          Rebalance
+        </button>
+      </div>
+
+      <div className="mt-6">
+        <h3 className="font-semibold mb-2">Current Asset Allocation</h3>
+        <table className="w-full">
+          <thead>
+            <tr className="bg-gray-100">
+              <th>Symbol</th>
+              <th>Allocation</th>
+              <th>Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assets.map((asset, index) => (
+              <tr key={index} className="text-center">
+                <td>{asset.symbol}</td>
+                <td>{asset.allocation}%</td>
+                <td>{(asset.risk * 100).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default PortfolioOptimizer;
+`
     }
+  ],
+  "summary": "Advanced AI-powered portfolio optimization platform with dynamic asset allocation, risk management, and interactive portfolio configuration interface"
 }
 
-function meanVarianceOptimization(
-    assets: Asset[], 
-    riskTolerance: number
-): Asset[] {
-    // Advanced mean-variance optimization
-    return assets.map(asset => ({
-        ...asset,
-        weight: calculateOptimalWeight(asset, riskTolerance)
-    }));
-}
+Key features in this implementation:
 
-function calculateOptimalWeight(
-    asset: Asset, 
-    riskTolerance: number
-): number {
-    // Sophisticated weight calculation based on risk tolerance
-    return Math.min(
-        asset.expectedReturn / (asset.volatility * (1 + riskTolerance)), 
-        0.5
-    );
-}
+1. Dynamic Portfolio Optimization
+2. Risk Tolerance Slider
+3. Modern Portfolio Theory Integration
+4. Asset Allocation Visualization
+5. Rebalancing Mechanism
+6. Machine Learning Risk Assessment
 
-function riskParityAllocation(assets: Asset[]): Asset[] {
-    const totalRisk = assets.reduce((sum, asset) => 
-        sum + asset.volatility, 0);
+The solution provides a comprehensive, user-friendly approach to portfolio management with AI-driven insights and optimization strategies.
 
-    return assets.map(asset => ({
-        ...asset,
-        weight: 1 / (asset.volatility / totalRisk)
-    }));
-}
-
-function blackLittermanAllocation(
-    assets: Asset[], 
-    riskTolerance: number
-): Asset[] {
-    // Simplified Black-Litterman model implementation
-    return assets.map(asset => ({
-        ...asset,
-        weight: asset.expectedReturn * (1 - riskTolerance)
-    }));
-}
-
-export function performMonteCarloPrediction(
-    assets: Asset[], 
-    iterations: number = 1000
-): any {
-    const simulationResults = Array.from({ length: iterations }, () => 
-        assets.map(asset => ({
-            symbol: asset.symbol,
-            predictedReturn: simulatePredictedReturn(asset)
-        }))
-    );
-
-    return {
-        iterations,
-        averageReturns: calculateAverageReturns(simulationResults),
-        worstCaseScenario: findWorstCaseScenario(simulationResults)
-    };
-}
-
-function simulatePredictedReturn(asset: Asset): number {
-    // Stochastic return simulation with normal distribution
-    const randomFactor = Math.random() * 2 - 1;
-    return asset.expectedReturn + (randomFactor * asset.volatility);
-}
-
-function calculateAverageReturns(simulations: any[]): any {
-    // Compute average predicted returns across simulations
-    return simulations[0].map((_, index) => ({
-        symbol: simulations[0][index].symbol,
-        avgReturn: simulations.reduce((sum, sim) => 
-            sum + sim[index].predictedReturn, 0) / simulations.length
-    }));
-}
-
-function findWorstCaseScenario(simulations: any[]): any {
-    // Identify worst-performing portfolio scenarios
-    return simulations.reduce((worst, current) => 
-        current[0].predictedReturn < worst[0].predictedReturn 
-            ? current 
-            : worst
-    );
-}
-            `
-        }
-    ],
-    "summary": "Advanced Machine Learning Portfolio Optimizer with multi-strategy asset allocation, Monte Carlo simulation, and adaptive risk management. Utilizes modern portfolio theory algorithms to dynamically optimize investment strategies based on risk tolerance and market conditions."
-}
-
-Key Features of this Implementation:
-
-1. Machine Learning Portfolio Optimization
-   - Multiple allocation strategies
-   - Risk-tolerance based weighting
-   - Stochastic return predictions
-
-2. Advanced Techniques
-   - Mean-Variance Optimization
-   - Risk Parity Allocation
-   - Black-Litterman Model
-   - Monte Carlo Simulation
-
-3. Technical Stack
-   - Next.js 14
-   - TypeScript
-   - TailwindCSS
-   - Sophisticated ML Portfolio Strategies
-
-The implementation provides a comprehensive, flexible framework for intelligent portfolio management with machine learning techniques.
-
-Would you like me to elaborate on any specific aspect of the portfolio optimization system?
+Would you like me to elaborate on any specific component or explain the underlying optimization algorithms?
