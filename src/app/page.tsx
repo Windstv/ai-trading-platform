@@ -1,186 +1,176 @@
-'use client';
+import * as math from 'mathjs';
+import { TimeSeries, Asset } from './types';
 
-import React, { useState, useEffect } from 'react';
-import { PerformanceAnalytics } from '@/modules/performance/PerformanceAnalytics';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import TradeSummaryCard from '@/components/TradeSummaryCard';
+export class CorrelationAnalysis {
+    private assets: Asset[] = [];
 
-export default function PerformanceDashboard() {
-    const [analytics, setAnalytics] = useState<PerformanceAnalytics | null>(null);
-    const [performanceData, setPerformanceData] = useState([]);
+    // Cross-asset correlation matrix
+    calculateCorrelationMatrix(): number[][] {
+        const priceMatrices = this.assets.map(asset => asset.prices);
+        return math.corr(priceMatrices);
+    }
 
-    useEffect(() => {
-        const initializeAnalytics = async () => {
-            const performanceTracker = new PerformanceAnalytics();
-            setAnalytics(performanceTracker);
+    // Real-time correlation tracking
+    trackRealTimeCorrelations(window: number = 30): Map<string, number> {
+        const correlations = new Map<string, number>();
+        
+        this.assets.forEach((asset1, i) => {
+            this.assets.slice(i + 1).forEach(asset2 => {
+                const correlation = this.calculatePearsonCorrelation(
+                    asset1.prices.slice(-window), 
+                    asset2.prices.slice(-window)
+                );
+                correlations.set(`${asset1.symbol}-${asset2.symbol}`, correlation);
+            });
+        });
 
-            const historicalData = await performanceTracker.getHistoricalPerformance();
-            setPerformanceData(historicalData);
-        };
+        return correlations;
+    }
 
-        initializeAnalytics();
-    }, []);
+    // Lagged correlation detection
+    detectLaggedCorrelations(maxLag: number = 10): Map<string, number[]> {
+        const laggedCorrelations = new Map<string, number[]>();
 
-    const renderPerformanceMetrics = () => {
-        if (!analytics) return null;
+        this.assets.forEach((asset1, i) => {
+            this.assets.slice(i + 1).forEach(asset2 => {
+                const lagCorrelations = Array.from({length: maxLag}, (_, lag) => 
+                    this.calculateLaggedCorrelation(asset1.prices, asset2.prices, lag)
+                );
+                laggedCorrelations.set(`${asset1.symbol}-${asset2.symbol}`, lagCorrelations);
+            });
+        });
 
-        const metrics = analytics.calculatePerformanceMetrics();
+        return laggedCorrelations;
+    }
 
-        return (
-            <div className="grid grid-cols-4 gap-4">
-                <TradeSummaryCard 
-                    title="Total P&L" 
-                    value={`$${metrics.totalProfitLoss.toFixed(2)}`} 
-                    color={metrics.totalProfitLoss >= 0 ? 'green' : 'red'}
-                />
-                <TradeSummaryCard 
-                    title="Win/Loss Ratio" 
-                    value={`${metrics.winLossRatio.toFixed(2)}%`} 
-                />
-                <TradeSummaryCard 
-                    title="Max Drawdown" 
-                    value={`${metrics.maxDrawdown.toFixed(2)}%`} 
-                    color="red"
-                />
-                <TradeSummaryCard 
-                    title="Trade Efficiency" 
-                    value={`${metrics.tradeEfficiency.toFixed(2)}%`} 
-                />
-            </div>
+    // Predictive correlation modeling
+    predictCorrelationTrend(timeframe: number = 60): Map<string, number> {
+        const predictions = new Map<string, number>();
+
+        this.assets.forEach((asset1, i) => {
+            this.assets.slice(i + 1).forEach(asset2 => {
+                const historicalCorrelations = this.calculateHistoricalCorrelations(
+                    asset1.prices, 
+                    asset2.prices, 
+                    timeframe
+                );
+                const prediction = this.forecastCorrelation(historicalCorrelations);
+                predictions.set(`${asset1.symbol}-${asset2.symbol}`, prediction);
+            });
+        });
+
+        return predictions;
+    }
+
+    // Utility methods
+    private calculatePearsonCorrelation(x: number[], y: number[]): number {
+        return math.correlation(x, y);
+    }
+
+    private calculateLaggedCorrelation(x: number[], y: number[], lag: number): number {
+        const laggedX = x.slice(lag);
+        const laggedY = y.slice(0, -lag);
+        return this.calculatePearsonCorrelation(laggedX, laggedY);
+    }
+
+    private calculateHistoricalCorrelations(x: number[], y: number[], window: number): number[] {
+        return x.slice(-window).map((_, i) => 
+            this.calculatePearsonCorrelation(
+                x.slice(i, i + window), 
+                y.slice(i, i + window)
+            )
         );
-    };
+    }
 
-    const renderPerformanceChart = () => (
-        <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={performanceData}>
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="totalValue" stroke="#8884d8" />
-                <Line type="monotone" dataKey="benchmarkValue" stroke="#82ca9d" />
-            </LineChart>
-        </ResponsiveContainer>
-    );
+    private forecastCorrelation(correlations: number[]): number {
+        // Simple moving average forecast
+        return math.mean(correlations);
+    }
+
+    // Add asset for analysis
+    addAsset(asset: Asset) {
+        this.assets.push(asset);
+    }
+}
+
+// src/modules/correlation/types.ts
+export interface Asset {
+    symbol: string;
+    prices: number[];
+    type: 'stock' | 'crypto' | 'forex' | 'commodity';
+}
+
+export interface TimeSeries {
+    timestamp: Date;
+    value: number;
+}
+
+// src/modules/correlation/CorrelationVisualization.tsx
+import React from 'react';
+import { HeatMap } from 'react-vis';
+import { CorrelationAnalysis } from './CorrelationAnalysis';
+
+interface CorrelationHeatmapProps {
+    correlationAnalysis: CorrelationAnalysis;
+}
+
+export const CorrelationHeatmap: React.FC<CorrelationHeatmapProps> = ({ correlationAnalysis }) => {
+    const correlationMatrix = correlationAnalysis.calculateCorrelationMatrix();
 
     return (
-        <div className="p-6 bg-gray-100 min-h-screen">
-            <h1 className="text-3xl font-bold mb-6">Performance Analytics Dashboard</h1>
-            
-            {renderPerformanceMetrics()}
-            
-            <div className="bg-white rounded-lg shadow-md p-6 mt-6">
-                <h2 className="text-xl font-semibold mb-4">Historical Performance</h2>
-                {renderPerformanceChart()}
-            </div>
-        </div>
+        <HeatMap
+            data={correlationMatrix}
+            colorRange={['red', 'white', 'green']}
+            height={400}
+            width={400}
+        />
     );
-}
-            `
-        },
-        {
-            "path": "src/modules/performance/PerformanceAnalytics.ts",
-            "content": `
-interface Trade {
-    symbol: string;
-    entryPrice: number;
-    exitPrice: number;
-    quantity: number;
-    timestamp: Date;
-    profit: number;
-}
+};
 
-interface PerformanceMetrics {
-    totalProfitLoss: number;
-    winLossRatio: number;
-    maxDrawdown: number;
-    tradeEfficiency: number;
-}
+// Example usage
+const analysis = new CorrelationAnalysis();
+analysis.addAsset({
+    symbol: 'BTC/USDT', 
+    prices: [50000, 52000, 51000],
+    type: 'crypto'
+});
+analysis.addAsset({
+    symbol: 'SPY', 
+    prices: [400, 405, 403],
+    type: 'stock'
+});
 
-export class PerformanceAnalytics {
-    private trades: Trade[] = [];
-
-    async fetchTrades(): Promise<void> {
-        // Simulated trade data fetch
-        this.trades = [
-            { 
-                symbol: 'BTC/USDT', 
-                entryPrice: 50000, 
-                exitPrice: 55000, 
-                quantity: 1, 
-                timestamp: new Date(), 
-                profit: 5000 
-            },
-            // More trade data...
-        ];
-    }
-
-    calculatePerformanceMetrics(): PerformanceMetrics {
-        const totalProfitLoss = this.trades.reduce((sum, trade) => sum + trade.profit, 0);
-        const winningTrades = this.trades.filter(trade => trade.profit > 0);
-        const losingTrades = this.trades.filter(trade => trade.profit <= 0);
-
-        const winLossRatio = (winningTrades.length / this.trades.length) * 100;
-        const maxDrawdown = this.calculateMaxDrawdown();
-        const tradeEfficiency = this.calculateTradeEfficiency();
-
-        return {
-            totalProfitLoss,
-            winLossRatio,
-            maxDrawdown,
-            tradeEfficiency
-        };
-    }
-
-    private calculateMaxDrawdown(): number {
-        // Simplified drawdown calculation
-        const sortedProfits = this.trades
-            .map(trade => trade.profit)
-            .sort((a, b) => a - b);
-        
-        return Math.abs(sortedProfits[0] / this.calculateTotalTradeValue()) * 100;
-    }
-
-    private calculateTradeEfficiency(): number {
-        const profitableTrades = this.trades.filter(trade => trade.profit > 0);
-        return (profitableTrades.length / this.trades.length) * 100;
-    }
-
-    private calculateTotalTradeValue(): number {
-        return this.trades.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
-    }
-
-    async getHistoricalPerformance() {
-        // Generate synthetic historical performance data
-        return Array.from({ length: 30 }, (_, i) => ({
-            date: `Day ${i + 1}`,
-            totalValue: 50000 + Math.random() * 10000,
-            benchmarkValue: 50000 + Math.random() * 9000
-        }));
-    }
-}
-            `
-        }
-    ],
-    "summary": "Performance Analytics Dashboard with comprehensive trading performance tracking, including P&L calculation, win/loss ratio analysis, drawdown tracking, and interactive visualization of historical performance against market benchmarks."
-}
+const correlations = analysis.trackRealTimeCorrelations();
+const laggedCorrelations = analysis.detectLaggedCorrelations();
+const predictedCorrelations = analysis.predictCorrelationTrend();
 
 Key Features:
-1. Total P&L Calculation
-2. Win/Loss Ratio Analysis
-3. Maximum Drawdown Tracking
-4. Trade Efficiency Metrics
-5. Historical Performance Visualization
-6. Benchmark Comparison
-7. Responsive Design
-8. Interactive Charts
+1. Cross-asset Correlation Matrix Calculation
+2. Real-time Correlation Tracking
+3. Lagged Correlation Detection
+4. Predictive Correlation Modeling
+5. Correlation Heatmap Visualization
+6. Support for Multiple Asset Types
+7. Flexible Time Series Analysis
 
-Technologies:
-- Next.js 14
+Technologies Used:
 - TypeScript
-- Recharts for Visualization
-- Tailwind CSS
+- Math.js for Statistical Calculations
+- React-Vis for Visualization
+- Modular and Extensible Design
 
-The implementation provides a comprehensive view of trading performance with dynamic metrics and visual representations. The system is modular and can be easily extended to support more complex performance tracking.
+Potential Use Cases:
+- Portfolio Diversification
+- Risk Management
+- Trading Strategy Development
+- Market Trend Analysis
+
+The implementation provides a comprehensive framework for analyzing market correlations across different asset classes with advanced statistical techniques.
+
+Recommended Improvements:
+1. Add more sophisticated prediction models
+2. Implement machine learning correlation forecasting
+3. Create more advanced visualization techniques
+4. Add support for more complex time series analysis
 
 Would you like me to elaborate on any specific aspect of the implementation?
