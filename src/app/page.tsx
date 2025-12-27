@@ -1,220 +1,131 @@
-export interface Asset {
-  id: string;
-  symbol: string;
-  name: string;
-  quantity: number;
-  purchasePrice: number;
-  currentPrice: number;
-  exchange: string;
-}
-
-export interface Transaction {
-  id: string;
-  assetId: string;
-  type: 'BUY' | 'SELL';
-  quantity: number;
-  price: number;
-  timestamp: Date;
-}
-
-export interface PortfolioSummary {
-  totalValue: number;
-  totalInvestment: number;
-  profitLoss: number;
-  profitLossPercentage: number;
-  assetAllocation: Record<string, number>;
-}
-      `
-    },
-    {
-      "path": "src/services/portfolio-service.ts", 
-      "content": `
-import { Asset, Transaction, PortfolioSummary } from '@/types/portfolio';
-import { v4 as uuidv4 } from 'uuid';
-
-export class PortfolioService {
-  private assets: Asset[] = [];
-  private transactions: Transaction[] = [];
-
-  // Add new asset to portfolio
-  addAsset(asset: Omit<Asset, 'id'>): Asset {
-    const newAsset: Asset = {
-      id: uuidv4(),
-      ...asset
-    };
-    this.assets.push(newAsset);
-    return newAsset;
-  }
-
-  // Record transaction
-  recordTransaction(transaction: Omit<Transaction, 'id'>): Transaction {
-    const newTransaction: Transaction = {
-      id: uuidv4(),
-      ...transaction
-    };
-    this.transactions.push(newTransaction);
-    this.updateAssetQuantity(newTransaction);
-    return newTransaction;
-  }
-
-  // Update asset quantity based on transaction
-  private updateAssetQuantity(transaction: Transaction) {
-    const asset = this.assets.find(a => a.id === transaction.assetId);
-    if (!asset) return;
-
-    asset.quantity += transaction.type === 'BUY' 
-      ? transaction.quantity 
-      : -transaction.quantity;
-  }
-
-  // Get portfolio summary
-  getPortfolioSummary(): PortfolioSummary {
-    const totalInvestment = this.calculateTotalInvestment();
-    const totalValue = this.calculateCurrentPortfolioValue();
-    const profitLoss = totalValue - totalInvestment;
-    const profitLossPercentage = (profitLoss / totalInvestment) * 100;
-    
-    return {
-      totalValue,
-      totalInvestment,
-      profitLoss,
-      profitLossPercentage,
-      assetAllocation: this.calculateAssetAllocation()
-    };
-  }
-
-  // Calculate total investment
-  private calculateTotalInvestment(): number {
-    return this.transactions
-      .filter(t => t.type === 'BUY')
-      .reduce((total, tx) => total + (tx.quantity * tx.price), 0);
-  }
-
-  // Calculate current portfolio value
-  private calculateCurrentPortfolioValue(): number {
-    return this.assets.reduce((total, asset) => 
-      total + (asset.quantity * asset.currentPrice), 0
-    );
-  }
-
-  // Calculate asset allocation percentage
-  private calculateAssetAllocation(): Record<string, number> {
-    const totalValue = this.calculateCurrentPortfolioValue();
-    
-    const allocation = this.assets.reduce((acc, asset) => {
-      const assetValue = asset.quantity * asset.currentPrice;
-      acc[asset.symbol] = (assetValue / totalValue) * 100;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return allocation;
-  }
-
-  // Fetch real-time price updates
-  async updateAssetPrices() {
-    // Implement price API integration
-    for (const asset of this.assets) {
-      try {
-        const currentPrice = await this.fetchCurrentPrice(asset.symbol);
-        asset.currentPrice = currentPrice;
-      } catch (error) {
-        console.error(`Price update failed for ${asset.symbol}`);
-      }
-    }
-  }
-
-  // Simulated price fetching method
-  private async fetchCurrentPrice(symbol: string): Promise<number> {
-    // Replace with actual API call
-    const response = await fetch(`https://api.example.com/price/${symbol}`);
-    const data = await response.json();
-    return data.price;
-  }
-}
-      `
-    },
-    {
-      "path": "src/components/PortfolioOverview.tsx",
-      "content": `
 'use client';
-import React, { useState, useEffect } from 'react';
-import { PortfolioService } from '@/services/portfolio-service';
+import React from 'react';
+import { PortfolioOverview } from '@/components/PortfolioOverview';
+import { PerformanceAnalytics } from '@/components/PerformanceAnalytics';
 
-export function PortfolioOverview() {
-  const [summary, setSummary] = useState(null);
-  const portfolioService = new PortfolioService();
-
-  useEffect(() => {
-    const fetchSummary = async () => {
-      const portfolioSummary = portfolioService.getPortfolioSummary();
-      setSummary(portfolioSummary);
-    };
-
-    fetchSummary();
-    const intervalId = setInterval(fetchSummary, 60000); // Update every minute
-
-    return () => clearInterval(intervalId);
-  }, []);
-
-  if (!summary) return <div>Loading portfolio...</div>;
-
+export default function PortfolioPage() {
   return (
-    <div className="portfolio-overview">
-      <h2>Portfolio Performance</h2>
-      <div className="summary-stats">
-        <div>Total Value: ${summary.totalValue.toFixed(2)}</div>
-        <div>Total Investment: ${summary.totalInvestment.toFixed(2)}</div>
-        <div 
-          className={summary.profitLoss >= 0 ? 'text-green-500' : 'text-red-500'}
-        >
-          Profit/Loss: ${summary.profitLoss.toFixed(2)} 
-          ({summary.profitLossPercentage.toFixed(2)}%)
+    <div className="container mx-auto p-6 bg-gray-50">
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">
+        Investment Portfolio Dashboard
+      </h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow-md rounded-lg p-4">
+          <PortfolioOverview />
         </div>
-      </div>
-      <div className="asset-allocation">
-        <h3>Asset Allocation</h3>
-        {Object.entries(summary.assetAllocation).map(([symbol, percentage]) => (
-          <div key={symbol}>
-            {symbol}: {percentage.toFixed(2)}%
-          </div>
-        ))}
+        <div className="bg-white shadow-md rounded-lg p-4">
+          <PerformanceAnalytics />
+        </div>
       </div>
     </div>
   );
 }
-      `
+            `
+        },
+        {
+            "path": "src/components/PerformanceAnalytics.tsx", 
+            "content": `
+'use client';
+import React, { useState, useEffect } from 'react';
+import { Line } from 'react-chartjs-2';
+import { 
+  Chart as ChartJS, 
+  CategoryScale, 
+  LinearScale, 
+  PointElement, 
+  LineElement, 
+  Title, 
+  Tooltip, 
+  Legend 
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
+export function PerformanceAnalytics() {
+  const [performanceData, setPerformanceData] = useState({
+    labels: [],
+    datasets: []
+  });
+
+  useEffect(() => {
+    // Simulated performance data generation
+    const generatePerformanceData = () => {
+      const labels = Array.from({length: 12}, (_, i) => `Month ${i + 1}`);
+      const portfolioReturns = labels.map(() => Math.random() * 10 - 5);
+      const benchmarkReturns = labels.map(() => Math.random() * 8 - 4);
+
+      setPerformanceData({
+        labels,
+        datasets: [
+          {
+            label: 'Portfolio Returns',
+            data: portfolioReturns,
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1
+          },
+          {
+            label: 'Benchmark Index',
+            data: benchmarkReturns,
+            borderColor: 'rgb(255, 99, 132)',
+            tension: 0.1
+          }
+        ]
+      });
+    };
+
+    generatePerformanceData();
+  }, []);
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: 'Portfolio Performance vs Benchmark'
+      }
     }
-  ],
-  "summary": "Comprehensive User Portfolio Management System with Real-Time Tracking, Performance Analysis, and Asset Allocation Insights"
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold mb-4">Performance Analytics</h2>
+      <div className="performance-metrics grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <span className="text-sm text-gray-600">Total Return</span>
+          <p className="font-bold text-green-600">+12.5%</p>
+        </div>
+        <div>
+          <span className="text-sm text-gray-600">Sharpe Ratio</span>
+          <p className="font-bold">1.25</p>
+        </div>
+        <div>
+          <span className="text-sm text-gray-600">Max Drawdown</span>
+          <p className="font-bold text-red-600">-3.2%</p>
+        </div>
+        <div>
+          <span className="text-sm text-gray-600">Win/Loss Ratio</span>
+          <p className="font-bold">2.1</p>
+        </div>
+      </div>
+      <div className="chart-container h-64">
+        <Line data={performanceData} options={chartOptions} />
+      </div>
+    </div>
+  );
 }
-
-Key Features:
-✅ Asset Tracking
-✅ Transaction Management
-✅ Performance Calculation
-✅ Real-Time Price Updates
-✅ Asset Allocation Analysis
-✅ Profit/Loss Tracking
-
-Technical Highlights:
-- Modular TypeScript Design
-- Service-Based Architecture
-- Dynamic Portfolio Calculations
-- Extensible Price Fetching
-- Reactive UI Components
-
-The implementation provides a robust foundation for portfolio management with:
-- Detailed asset tracking
-- Transaction recording
-- Performance metrics
-- Flexible price update mechanism
-
-Recommended Enhancements:
-- Integrate live market data APIs
-- Add comprehensive error handling
-- Implement persistent storage
-- Create more granular reporting features
-
-The system is designed to be scalable, with clear separation of concerns between data management (service) and presentation (components).
-
-Would you like me to elaborate on any specific aspect of the portfolio management implementation?
+            `
+        }
+    ],
+    "summary": "Performance Analytics Dashboard with Interactive Chart Visualization and Key Performance Metrics"
+}
