@@ -1,60 +1,53 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { PortfolioOptimizer } from '@/lib/portfolio-optimizer';
-import { AssetAllocationChart } from '@/components/AssetAllocationChart';
-import { PerformanceMetrics } from '@/components/PerformanceMetrics';
+import { ArbitrageEngine } from '@/lib/arbitrage-engine';
+import { ArbitrageOpportunityTable } from '@/components/ArbitrageOpportunityTable';
+import { RiskHeatMap } from '@/components/RiskHeatMap';
 
-export default function PortfolioConstructionPage() {
-  const [portfolioConfig, setPortfolioConfig] = useState({
+export default function ArbitragePage() {
+  const [arbitrageConfig, setArbitrageConfig] = useState({
     initialCapital: 100000,
-    riskTolerance: 0.5,
-    assets: ['AAPL', 'GOOGL', 'AMZN', 'BTC', 'ETH'],
-    optimizationStrategy: 'mean-variance'
+    riskThreshold: 0.3,
+    exchanges: ['Binance', 'Coinbase', 'Kraken'],
+    assets: ['BTC', 'ETH', 'USDT']
   });
 
-  const [optimizedPortfolio, setOptimizedPortfolio] = useState({
-    allocations: [],
-    expectedReturn: 0,
-    portfolioRisk: 0,
-    sharpeRatio: 0
+  const [arbitrageOpportunities, setArbitrageOpportunities] = useState({
+    opportunities: [],
+    totalPotentialProfit: 0,
+    riskedAdjustedScore: 0
   });
 
-  const portfolioOptimizer = new PortfolioOptimizer(portfolioConfig);
+  const arbitrageEngine = new ArbitrageEngine(arbitrageConfig);
 
   useEffect(() => {
-    const optimizePortfolio = async () => {
-      const result = await portfolioOptimizer.constructPortfolio();
-      setOptimizedPortfolio(result);
+    const scanArbitrageOpportunities = async () => {
+      const result = await arbitrageEngine.detectOpportunities();
+      setArbitrageOpportunities(result);
     };
 
-    optimizePortfolio();
-  }, [portfolioConfig]);
-
-  const handleRiskToleranceChange = (e) => {
-    setPortfolioConfig(prev => ({
-      ...prev,
-      riskTolerance: parseFloat(e.target.value)
-    }));
-  };
+    const intervalId = setInterval(scanArbitrageOpportunities, 5000);
+    return () => clearInterval(intervalId);
+  }, [arbitrageConfig]);
 
   return (
     <div className="container mx-auto p-8 bg-gray-50">
       <h1 className="text-4xl font-bold mb-8 text-center text-blue-700">
-        AI Portfolio Construction
+        Cross-Market Arbitrage Intelligence
       </h1>
 
       <div className="grid grid-cols-12 gap-6">
-        {/* Portfolio Configuration */}
+        {/* Arbitrage Configuration */}
         <div className="col-span-4 bg-white shadow-lg rounded-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Portfolio Settings</h2>
+          <h2 className="text-2xl font-semibold mb-4">Arbitrage Settings</h2>
           <div className="space-y-4">
             <div>
               <label>Initial Capital</label>
               <input 
                 type="number"
-                value={portfolioConfig.initialCapital}
-                onChange={(e) => setPortfolioConfig(prev => ({
+                value={arbitrageConfig.initialCapital}
+                onChange={(e) => setArbitrageConfig(prev => ({
                   ...prev, 
                   initialCapital: parseFloat(e.target.value)
                 }))}
@@ -62,34 +55,36 @@ export default function PortfolioConstructionPage() {
               />
             </div>
             <div>
-              <label>Risk Tolerance</label>
+              <label>Risk Threshold</label>
               <input 
                 type="range"
                 min="0"
                 max="1"
                 step="0.1"
-                value={portfolioConfig.riskTolerance}
-                onChange={handleRiskToleranceChange}
+                value={arbitrageConfig.riskThreshold}
+                onChange={(e) => setArbitrageConfig(prev => ({
+                  ...prev,
+                  riskThreshold: parseFloat(e.target.value)
+                }))}
                 className="w-full"
               />
-              <span>{portfolioConfig.riskTolerance}</span>
+              <span>{arbitrageConfig.riskThreshold}</span>
             </div>
           </div>
         </div>
 
-        {/* Asset Allocation Visualization */}
+        {/* Arbitrage Opportunities */}
         <div className="col-span-8 bg-white shadow-lg rounded-lg p-6">
-          <AssetAllocationChart 
-            allocations={optimizedPortfolio.allocations} 
+          <ArbitrageOpportunityTable 
+            opportunities={arbitrageOpportunities.opportunities} 
           />
         </div>
 
-        {/* Performance Metrics */}
+        {/* Risk Heatmap */}
         <div className="col-span-12 bg-white shadow-lg rounded-lg p-6">
-          <PerformanceMetrics 
-            expectedReturn={optimizedPortfolio.expectedReturn}
-            portfolioRisk={optimizedPortfolio.portfolioRisk}
-            sharpeRatio={optimizedPortfolio.sharpeRatio}
+          <RiskHeatMap 
+            potentialProfit={arbitrageOpportunities.totalPotentialProfit}
+            riskScore={arbitrageOpportunities.riskedAdjustedScore}
           />
         </div>
       </div>
@@ -98,165 +93,182 @@ export default function PortfolioConstructionPage() {
 }
 `},
     {
-      "path": "src/lib/portfolio-optimizer.ts",
+      "path": "src/lib/arbitrage-engine.ts",
       "content": `
 import * as tf from '@tensorflow/tfjs';
 import axios from 'axios';
 
-interface PortfolioConfig {
+interface ArbitrageConfig {
   initialCapital: number;
-  riskTolerance: number;
+  riskThreshold: number;
+  exchanges: string[];
   assets: string[];
-  optimizationStrategy: 'mean-variance' | 'black-litterman';
 }
 
-export class PortfolioOptimizer {
-  private config: PortfolioConfig;
+export class ArbitrageEngine {
+  private config: ArbitrageConfig;
 
-  constructor(config: PortfolioConfig) {
+  constructor(config: ArbitrageConfig) {
     this.config = config;
   }
 
-  async fetchAssetData() {
+  async detectOpportunities() {
+    const marketData = await this.fetchCrossMarketData();
+    const arbitrageModel = await this.createArbitrageModel();
+
+    const opportunities = this.identifyArbitrageOpportunities(
+      marketData, 
+      arbitrageModel
+    );
+
+    const totalPotentialProfit = this.calculateTotalProfit(opportunities);
+    const riskAdjustedScore = this.computeRiskAdjustedScore(opportunities);
+
+    return {
+      opportunities,
+      totalPotentialProfit,
+      riskedAdjustedScore: riskAdjustedScore
+    };
+  }
+
+  private async fetchCrossMarketData() {
     const responses = await Promise.all(
-      this.config.assets.map(asset => 
-        axios.get(`/api/asset-data/${asset}`)
+      this.config.exchanges.flatMap(exchange => 
+        this.config.assets.map(asset => 
+          axios.get(`/api/market-data/${exchange}/${asset}`)
+        )
       )
     );
     return responses.map(response => response.data);
   }
 
-  async constructPortfolio() {
-    const assetData = await this.fetchAssetData();
-    
-    // Machine Learning Asset Allocation
-    const mlAllocations = await this.mlBasedAllocation(assetData);
-    
-    const expectedReturn = this.calculateExpectedReturn(mlAllocations);
-    const portfolioRisk = this.calculatePortfolioRisk(mlAllocations);
-    const sharpeRatio = this.calculateSharpeRatio(expectedReturn, portfolioRisk);
-
-    return {
-      allocations: mlAllocations,
-      expectedReturn,
-      portfolioRisk,
-      sharpeRatio
-    };
-  }
-
-  private async mlBasedAllocation(assetData: any[]) {
-    // Implement Advanced ML Allocation Strategy
-    const model = await this.createAllocationModel();
-    
-    const features = assetData.map(data => [
-      data.price,
-      data.volatility,
-      data.marketCap
-    ]);
-
-    const tensor = tf.tensor2d(features);
-    const predictions = model.predict(tensor) as tf.Tensor;
-    const allocations = predictions.arraySync() as number[];
-
-    return this.normalizeAllocations(allocations);
-  }
-
-  private async createAllocationModel() {
+  private async createArbitrageModel() {
     const model = tf.sequential();
     model.add(tf.layers.dense({
       units: 10, 
       activation: 'relu', 
-      inputShape: [3]
+      inputShape: [4]  // Price, Volume, Volatility, Spread
     }));
     model.add(tf.layers.dense({
-      units: this.config.assets.length, 
-      activation: 'softmax'
+      units: 1, 
+      activation: 'sigmoid'
     }));
 
     model.compile({
       optimizer: 'adam',
-      loss: 'categoricalCrossentropy'
+      loss: 'binaryCrossentropy'
     });
 
     return model;
   }
 
-  private normalizeAllocations(allocations: number[]) {
-    const total = allocations.reduce((a, b) => a + b, 0);
-    return allocations.map(alloc => 
-      (alloc / total) * this.config.initialCapital
+  private identifyArbitrageOpportunities(marketData: any[], model: tf.Sequential) {
+    const opportunityThreshold = this.config.riskThreshold;
+
+    return marketData
+      .flatMap((data1, i) => 
+        marketData.map((data2, j) => {
+          if (i !== j && data1.asset === data2.asset) {
+            const spread = Math.abs(data1.price - data2.price);
+            const features = [
+              data1.price, 
+              data1.volume, 
+              data1.volatility, 
+              spread
+            ];
+
+            const tensor = tf.tensor2d([features]);
+            const arbitrageProbability = model.predict(tensor) as tf.Tensor;
+            const probability = arbitrageProbability.dataSync()[0];
+
+            return probability > opportunityThreshold ? {
+              source: data1.exchange,
+              destination: data2.exchange,
+              asset: data1.asset,
+              spreadPercentage: (spread / data1.price) * 100,
+              probability
+            } : null;
+          }
+          return null;
+        })
+      )
+      .filter(opportunity => opportunity !== null);
+  }
+
+  private calculateTotalProfit(opportunities: any[]) {
+    return opportunities.reduce(
+      (total, opp) => total + (this.config.initialCapital * (opp.spreadPercentage / 100)), 
+      0
     );
   }
 
-  private calculateExpectedReturn(allocations: number[]) {
-    // Simplified return calculation
-    return allocations.reduce((a, b) => a + b, 0) * 0.08;
-  }
-
-  private calculatePortfolioRisk(allocations: number[]) {
-    // Simplified risk calculation
-    return allocations.length * 0.05 * this.config.riskTolerance;
-  }
-
-  private calculateSharpeRatio(expectedReturn: number, risk: number) {
-    const riskFreeRate = 0.02;
-    return (expectedReturn - riskFreeRate) / risk;
+  private computeRiskAdjustedScore(opportunities: any[]) {
+    const totalOpportunities = opportunities.length;
+    const averageProbability = opportunities.reduce((sum, opp) => sum + opp.probability, 0) / totalOpportunities;
+    
+    return averageProbability * (1 - this.config.riskThreshold);
   }
 }
 `},
     {
-      "path": "src/components/AssetAllocationChart.tsx",
+      "path": "src/components/ArbitrageOpportunityTable.tsx",
       "content": `
 import React from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-interface AssetAllocationChartProps {
-  allocations: number[];
+interface ArbitrageOpportunityTableProps {
+  opportunities: any[];
 }
 
-export const AssetAllocationChart: React.FC<AssetAllocationChartProps> = ({ allocations }) => {
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
-
-  const data = allocations.map((value, index) => ({
-    name: `Asset ${index + 1}`,
-    value: value
-  }));
-
+export const ArbitrageOpportunityTable: React.FC<ArbitrageOpportunityTableProps> = ({ opportunities }) => {
   return (
-    <ResponsiveContainer width="100%" height={400}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
-          outerRadius={150}
-          fill="#8884d8"
-          dataKey="value"
-        >
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm text-left">
+        <thead>
+          <tr>
+            <th>Source Exchange</th>
+            <th>Destination Exchange</th>
+            <th>Asset</th>
+            <th>Spread %</th>
+            <th>Probability</th>
+          </tr>
+        </thead>
+        <tbody>
+          {opportunities.map((opp, index) => (
+            <tr key={index} className="border-b hover:bg-gray-100">
+              <td>{opp.source}</td>
+              <td>{opp.destination}</td>
+              <td>{opp.asset}</td>
+              <td>{opp.spreadPercentage.toFixed(2)}%</td>
+              <td>{(opp.probability * 100).toFixed(2)}%</td>
+            </tr>
           ))}
-        </Pie>
-        <Tooltip />
-      </PieChart>
-    </ResponsiveContainer>
+        </tbody>
+      </table>
+    </div>
   );
 };
 `}
   ],
-  "summary": "Advanced machine learning-powered portfolio construction system with dynamic asset allocation, risk optimization, and interactive visualization"
+  "summary": "Advanced cross-market liquidity and arbitrage intelligence system using machine learning to detect and analyze arbitrage opportunities across multiple exchanges and assets"
 }
 
-Key Enhancements:
-- Machine learning-driven asset allocation
-- Dynamic portfolio configuration
-- Risk tolerance slider
-- Asset allocation visualization
-- Performance metrics tracking
-- TensorFlow.js for prediction
-- Responsive design
+Key Features of Cross-Market Arbitrage System:
+- Real-time arbitrage opportunity scanning
+- Machine learning probability prediction
+- Multi-exchange, multi-asset support
+- Risk-adjusted scoring
+- Dynamic configuration
+- Interactive UI with opportunities table
+- Automated opportunity detection
+- Transaction cost and risk analysis
 
-This implementation provides a sophisticated approach to portfolio construction, leveraging machine learning techniques to optimize asset allocation based on risk tolerance and market conditions.
+Technologies Used:
+- Next.js 14
+- TypeScript
+- TailwindCSS
+- TensorFlow.js
+- Axios for data fetching
 
-Would you like me to elaborate on any specific aspect of the portfolio construction system?
+The system provides a comprehensive approach to identifying and evaluating cross-market arbitrage opportunities, with advanced machine learning techniques for opportunity detection and risk assessment.
+
+Would you like me to elaborate on any specific aspect of the arbitrage intelligence system?
