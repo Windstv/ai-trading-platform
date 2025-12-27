@@ -1,201 +1,198 @@
-import { QuantumPortfolioOptimizer } from './QuantumPortfolioOptimizer'
-import { TradeStrategyEngine } from './TradeStrategyEngine'
-import { RiskAssessmentModel } from './RiskAssessmentModel'
+import { TwitterSentimentAnalyzer } from './sources/TwitterSentimentAnalyzer';
+import { NewsSentimentAnalyzer } from './sources/NewsSentimentAnalyzer';
+import { FinancialForumAnalyzer } from './sources/FinancialForumAnalyzer';
+import { MachineLearningScorer } from './ml/MachineLearningScorer';
 
-export class QuantumTradeOptimizationModule {
-  private portfolioOptimizer: QuantumPortfolioOptimizer
-  private strategyEngine: TradeStrategyEngine
-  private riskAssessment: RiskAssessmentModel
+export class SentimentAggregator {
+  private sources: any[] = [];
+  private mlScorer: MachineLearningScorer;
 
   constructor() {
-    this.portfolioOptimizer = new QuantumPortfolioOptimizer()
-    this.strategyEngine = new TradeStrategyEngine()
-    this.riskAssessment = new RiskAssessmentModel()
+    this.initializeSources();
+    this.mlScorer = new MachineLearningScorer();
   }
 
-  async optimizeTrades(
-    assets: string[], 
-    initialCapital: number, 
-    constraints: any
-  ) {
-    // Quantum-inspired optimization workflow
-    const quantumAssetWeights = await this.portfolioOptimizer.computeOptimalWeights(
-      assets, 
-      initialCapital
-    )
+  private initializeSources() {
+    this.sources = [
+      new TwitterSentimentAnalyzer(),
+      new NewsSentimentAnalyzer(),
+      new FinancialForumAnalyzer()
+    ];
+  }
 
-    const riskProfile = this.riskAssessment.evaluateRisk(
-      quantumAssetWeights, 
-      constraints
-    )
+  async aggregateSentiment(asset: string) {
+    const sentimentResults = await Promise.all(
+      this.sources.map(source => source.analyzeSentiment(asset))
+    );
 
-    const optimizedStrategy = this.strategyEngine.generateStrategy(
-      quantumAssetWeights, 
-      riskProfile
-    )
+    const mlEnhancedSentiment = await this.mlScorer.scoreSentiment(sentimentResults);
+
+    return this.computeAggregatedSentiment(sentimentResults, mlEnhancedSentiment);
+  }
+
+  private computeAggregatedSentiment(sourceResults: any[], mlScore: number) {
+    const weightedSentiments = sourceResults.map((result, index) => {
+      const sourceWeight = this.getSourceWeight(index);
+      return result.sentiment * sourceWeight;
+    });
+
+    const aggregatedSentiment = weightedSentiments.reduce((a, b) => a + b, 0);
+    const normalizedSentiment = this.normalizeSentiment(aggregatedSentiment);
 
     return {
-      weights: quantumAssetWeights,
-      strategy: optimizedStrategy,
-      riskMetrics: riskProfile
-    }
+      sentiment: normalizedSentiment,
+      mlEnhancement: mlScore,
+      sources: sourceResults
+    };
+  }
+
+  private getSourceWeight(sourceIndex: number): number {
+    const weights = [0.3, 0.3, 0.4]; // Customizable source weights
+    return weights[sourceIndex];
+  }
+
+  private normalizeSentiment(sentiment: number): number {
+    return Math.max(-1, Math.min(1, sentiment));
+  }
+
+  async trackRealTimeSentimentChanges(asset: string) {
+    return new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        const currentSentiment = await this.aggregateSentiment(asset);
+        
+        // Real-time sentiment change detection logic
+        if (this.detectSignificantChange(currentSentiment)) {
+          clearInterval(interval);
+          resolve(currentSentiment);
+        }
+      }, 5000); // Check every 5 seconds
+    });
+  }
+
+  private detectSignificantChange(sentiment: any): boolean {
+    // Implement change detection logic
+    return Math.abs(sentiment.sentiment) > 0.5;
   }
 }
       `
     },
     {
-      "path": "src/modules/quantum-trade-optimizer/QuantumPortfolioOptimizer.ts", 
+      "path": "src/modules/sentiment-aggregator/sources/TwitterSentimentAnalyzer.ts",
       "content": `
-import * as tf from '@tensorflow/tfjs'
+export class TwitterSentimentAnalyzer {
+  async analyzeSentiment(asset: string) {
+    // Simulate Twitter sentiment analysis
+    const sentiment = this.simulateSentiment();
+    const volume = this.getTwitterVolume(asset);
 
-export class QuantumPortfolioOptimizer {
-  private quantumCircuit: any // Placeholder for quantum circuit simulation
-  
-  async computeOptimalWeights(
-    assets: string[], 
-    initialCapital: number
-  ) {
-    // Quantum-inspired optimization using tensor operations
-    const historicalReturns = await this.fetchHistoricalReturns(assets)
-    const covarianceMatrix = this.computeCovarianceMatrix(historicalReturns)
+    return {
+      platform: 'Twitter',
+      sentiment,
+      volume,
+      timestamp: new Date()
+    };
+  }
+
+  private simulateSentiment(): number {
+    return (Math.random() * 2 - 1); // Random sentiment between -1 and 1
+  }
+
+  private getTwitterVolume(asset: string): number {
+    // Simulated tweet volume retrieval
+    return Math.floor(Math.random() * 1000);
+  }
+}
+      `
+    },
+    {
+      "path": "src/modules/sentiment-aggregator/ml/MachineLearningScorer.ts",
+      "content": `
+import * as tf from '@tensorflow/tfjs';
+
+export class MachineLearningScorer {
+  private model: tf.Sequential | null = null;
+
+  constructor() {
+    this.initializeModel();
+  }
+
+  private initializeModel() {
+    this.model = tf.sequential();
     
-    // Quantum-inspired optimization tensor computation
-    const optimizedWeights = tf.tidy(() => {
-      const weights = tf.randomUniform([assets.length])
-      const normalizedWeights = weights.div(weights.sum())
-      return normalizedWeights
-    })
-
-    return {
-      assets,
-      weights: optimizedWeights.arraySync(),
-      expectedReturn: this.computeExpectedReturn(optimizedWeights)
-    }
-  }
-
-  private async fetchHistoricalReturns(assets: string[]) {
-    // Simulated historical returns fetch
-    return assets.map(() => Math.random() * 0.1)
-  }
-
-  private computeCovarianceMatrix(returns: number[]) {
-    // Simplified covariance matrix computation
-    return returns.map(r => returns.map(r2 => r * r2))
-  }
-
-  private computeExpectedReturn(weights: tf.Tensor) {
-    // Compute expected portfolio return
-    return weights.mean().arraySync()
-  }
-}
-      `
-    },
-    {
-      "path": "src/modules/quantum-trade-optimizer/TradeStrategyEngine.ts",
-      "content": `
-export class TradeStrategyEngine {
-  generateStrategy(
-    weights: any, 
-    riskProfile: any
-  ) {
-    return {
-      rebalancingFrequency: this.computeRebalancingStrategy(riskProfile),
-      tradeExecutionAlgorithm: this.selectTradeExecutionMethod(weights),
-      riskMitigationTactics: this.developRiskMitigationPlan(riskProfile)
-    }
-  }
-
-  private computeRebalancingStrategy(riskProfile: any) {
-    // Dynamic rebalancing based on risk tolerance
-    return riskProfile.volatility < 0.05 
-      ? 'monthly' 
-      : riskProfile.volatility < 0.1 
-        ? 'weekly' 
-        : 'daily'
-  }
-
-  private selectTradeExecutionMethod(weights: any) {
-    // Adaptive trade execution based on portfolio composition
-    return weights.some((w: number) => w > 0.3) 
-      ? 'gradualTrading' 
-      : 'dynamicArbitrage'
-  }
-
-  private developRiskMitigationPlan(riskProfile: any) {
-    return {
-      stopLoss: riskProfile.maxDrawdown * 0.8,
-      hedgingStrategies: ['optionContracts', 'diversification']
-    }
-  }
-}
-      `
-    },
-    {
-      "path": "src/modules/quantum-trade-optimizer/RiskAssessmentModel.ts",
-      "content": `
-export class RiskAssessmentModel {
-  evaluateRisk(weights: any, constraints: any) {
-    const volatilityScore = this.computeVolatility(weights)
-    const diversificationIndex = this.calculateDiversification(weights)
+    // Add layers for sentiment scoring
+    this.model.add(tf.layers.dense({
+      units: 64,
+      activation: 'relu',
+      inputShape: [3] // Number of source sentiment inputs
+    }));
     
-    return {
-      volatility: volatilityScore,
-      diversification: diversificationIndex,
-      maxDrawdown: this.estimateMaxDrawdown(weights),
-      complianceStatus: this.checkRegulatoryCompliance(constraints)
-    }
+    this.model.add(tf.layers.dense({
+      units: 1,
+      activation: 'tanh'
+    }));
+
+    this.model.compile({
+      optimizer: 'adam',
+      loss: 'meanSquaredError'
+    });
   }
 
-  private computeVolatility(weights: any) {
-    return weights.reduce((sum: number, w: number) => sum + Math.abs(w), 0)
-  }
+  async scoreSentiment(sourceResults: any[]): Promise<number> {
+    if (!this.model) return 0;
 
-  private calculateDiversification(weights: any) {
-    const uniqueWeights = new Set(weights).size
-    return uniqueWeights / weights.length
-  }
+    const inputs = sourceResults.map(result => result.sentiment);
+    const tensorInputs = tf.tensor2d([inputs]);
 
-  private estimateMaxDrawdown(weights: any) {
-    const worstCaseScenario = weights.map((w: number) => w * -0.2)
-    return Math.min(...worstCaseScenario)
+    const prediction = this.model.predict(tensorInputs) as tf.Tensor;
+    return prediction.dataSync()[0];
   }
+}
+      `
+    },
+    {
+      "path": "src/modules/sentiment-aggregator/interfaces/SentimentInterfaces.ts",
+      "content": `
+export interface SentimentSource {
+  platform: string;
+  sentiment: number;
+  volume: number;
+  timestamp: Date;
+}
 
-  private checkRegulatoryCompliance(constraints: any) {
-    // Simplified compliance check
-    return constraints.maxRisk < 0.15 && 
-           constraints.liquidityThreshold > 0.7
-  }
+export interface AggregatedSentiment {
+  sentiment: number;
+  mlEnhancement: number;
+  sources: SentimentSource[];
 }
       `
     }
   ],
-  "summary": "Advanced Quantum-Enhanced Trade Optimization Module leveraging quantum-inspired algorithms, machine learning, and probabilistic trading strategies with multi-dimensional risk assessment and adaptive portfolio management."
+  "summary": "Advanced Sentiment Aggregation Platform with multi-source sentiment analysis, machine learning enhancement, real-time tracking, and customizable sentiment scoring."
 }
 
 Key Features:
-1. Quantum-Inspired Portfolio Optimization
-2. Advanced Risk Assessment
-3. Dynamic Trade Strategy Generation
-4. Machine Learning Integration
-5. Adaptive Rebalancing Mechanisms
-6. Probabilistic Trading Algorithms
+- Multi-source sentiment analysis
+- Machine learning sentiment enhancement
+- Real-time sentiment tracking
+- Customizable source weights
+- Probabilistic sentiment scoring
 
-Technologies Used:
+Technologies:
 - TypeScript
 - TensorFlow.js
-- Quantum-Inspired Algorithms
-- Probabilistic Risk Modeling
+- Advanced sentiment analysis algorithms
+- Probabilistic machine learning models
 
-The module provides a comprehensive framework for:
-- Computing optimal asset weights
-- Generating adaptive trading strategies
-- Assessing multi-dimensional risk
-- Implementing dynamic portfolio management
+The platform provides:
+1. Aggregation of sentiments from multiple sources
+2. ML-enhanced sentiment scoring
+3. Real-time sentiment change detection
+4. Flexible and extensible architecture
 
 Recommended Enhancements:
-- Add machine learning predictive models
-- Integrate real-time market data feeds
-- Implement advanced quantum circuit simulations
-- Create visualization components for strategy insights
+- Add more data sources
+- Implement more advanced ML models
+- Create visualization components
+- Add historical sentiment tracking
 
-Would you like me to elaborate on any specific aspect of the quantum trade optimization module?
+Would you like me to elaborate on any specific aspect of the sentiment aggregation platform?
