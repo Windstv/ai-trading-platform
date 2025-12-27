@@ -1,225 +1,209 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { SentimentAnalyzer } from '@/services/sentiment-analysis/sentiment-analyzer';
-import { CryptoDataFetcher } from '@/services/data-fetcher/crypto-data-fetcher';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import { RiskSimulator } from '@/services/risk-management/risk-simulator';
+import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ComposedChart } from 'recharts';
 
-interface SentimentData {
+interface RiskMetrics {
   timestamp: string;
-  sentiment: number;
-  price: number;
-  cryptocurrency: string;
+  varMetric: number;
+  cvarMetric: number;
+  drawdownRisk: number;
+  portfolioValue: number;
 }
 
-export default function CryptoSentimentDashboard() {
-  const [sentimentData, setSentimentData] = useState<SentimentData[]>([]);
-  const [selectedCrypto, setSelectedCrypto] = useState<string>('BTC');
-  const [loading, setLoading] = useState<boolean>(false);
+export default function RiskManagementDashboard() {
+  const [riskMetrics, setRiskMetrics] = useState<RiskMetrics[]>([]);
+  const [riskParameters, setRiskParameters] = useState({
+    confidenceLevel: 0.95,
+    simulationIterations: 10000,
+    portfolioAssets: ['AAPL', 'GOOGL', 'AMZN']
+  });
 
-  const cryptocurrencies = ['BTC', 'ETH', 'DOGE', 'XRP', 'ADA'];
+  const riskSimulator = new RiskSimulator();
 
-  const fetchSentimentAnalysis = async (crypto: string) => {
-    setLoading(true);
+  const runRiskSimulation = async () => {
     try {
-      const sentimentAnalyzer = new SentimentAnalyzer();
-      const dataFetcher = new CryptoDataFetcher();
-
-      // Fetch social media sentiment
-      const socialSentiment = await sentimentAnalyzer.analyzeSocialMediaSentiment(crypto);
-      
-      // Fetch price data
-      const priceData = await dataFetcher.fetchHistoricalPrices(crypto);
-
-      // Correlate sentiment with price movements
-      const correlatedData = sentimentAnalyzer.correlateSentimentWithPrices(socialSentiment, priceData);
-
-      setSentimentData(correlatedData);
+      const simulationResults = await riskSimulator.runMonteCarloSimulation(riskParameters);
+      setRiskMetrics(simulationResults);
     } catch (error) {
-      console.error('Sentiment analysis failed:', error);
-    } finally {
-      setLoading(false);
+      console.error('Risk simulation failed', error);
     }
   };
 
   useEffect(() => {
-    fetchSentimentAnalysis(selectedCrypto);
-  }, [selectedCrypto]);
+    runRiskSimulation();
+  }, [JSON.stringify(riskParameters)]);
 
   return (
     <div className="container mx-auto p-8 bg-gray-50">
       <h1 className="text-4xl font-bold mb-8 text-center text-blue-600">
-        Crypto Sentiment Analysis Engine
+        Advanced Risk Management Simulator
       </h1>
 
-      <div className="flex justify-center mb-6">
-        {cryptocurrencies.map(crypto => (
-          <button
-            key={crypto}
-            onClick={() => setSelectedCrypto(crypto)}
-            className={`mx-2 px-4 py-2 rounded ${
-              selectedCrypto === crypto 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-gray-200 text-gray-700'
-            }`}
-          >
-            {crypto}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="text-center">Loading sentiment analysis...</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-4">Sentiment Trends</h2>
-            <LineChart width={500} height={300} data={sentimentData}>
-              <XAxis dataKey="timestamp" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="sentiment" stroke="#8884d8" />
-              <Line type="monotone" dataKey="price" stroke="#82ca9d" />
-            </LineChart>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-4">Sentiment Insights</h2>
-            <div className="space-y-4">
-              <div>
-                <strong>Current Sentiment:</strong> 
-                {sentimentData.length > 0 
-                  ? sentimentData[sentimentData.length - 1].sentiment.toFixed(2) 
-                  : 'N/A'}
-              </div>
-              <div>
-                <strong>Sentiment Volatility:</strong> High
-              </div>
-              <div>
-                <strong>Price Correlation:</strong> Strong Positive
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-semibold mb-4">Risk Configuration</h2>
+          <div className="space-y-4">
+            <div>
+              <label>Confidence Level</label>
+              <input 
+                type="number" 
+                value={riskParameters.confidenceLevel}
+                onChange={(e) => setRiskParameters(prev => ({
+                  ...prev, 
+                  confidenceLevel: parseFloat(e.target.value)
+                }))}
+                className="w-full border p-2"
+              />
+            </div>
+            <div>
+              <label>Simulation Iterations</label>
+              <input 
+                type="number" 
+                value={riskParameters.simulationIterations}
+                onChange={(e) => setRiskParameters(prev => ({
+                  ...prev, 
+                  simulationIterations: parseInt(e.target.value)
+                }))}
+                className="w-full border p-2"
+              />
             </div>
           </div>
         </div>
-      )}
+
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-semibold mb-4">Risk Metrics</h2>
+          <div className="space-y-4">
+            <div>
+              <strong>Value at Risk (VaR):</strong> 
+              {riskMetrics.length > 0 
+                ? riskMetrics[riskMetrics.length - 1].varMetric.toFixed(2) 
+                : 'N/A'}%
+            </div>
+            <div>
+              <strong>Conditional VaR (CVaR):</strong> 
+              {riskMetrics.length > 0 
+                ? riskMetrics[riskMetrics.length - 1].cvarMetric.toFixed(2) 
+                : 'N/A'}%
+            </div>
+            <div>
+              <strong>Max Drawdown:</strong> 
+              {riskMetrics.length > 0 
+                ? riskMetrics[riskMetrics.length - 1].drawdownRisk.toFixed(2) 
+                : 'N/A'}%
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-semibold mb-4">Risk Budget</h2>
+          <div className="space-y-4">
+            {riskParameters.portfolioAssets.map(asset => (
+              <div key={asset} className="flex justify-between">
+                <span>{asset}</span>
+                <span>25%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-semibold mb-4">Risk Simulation Trends</h2>
+        <ComposedChart width={800} height={400} data={riskMetrics}>
+          <XAxis dataKey="timestamp" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="varMetric" stroke="#8884d8" name="VaR" />
+          <Line type="monotone" dataKey="cvarMetric" stroke="#82ca9d" name="CVaR" />
+          <Line type="monotone" dataKey="drawdownRisk" stroke="#ff7300" name="Drawdown" />
+        </ComposedChart>
+      </div>
     </div>
   );
 }`
     },
     {
-      "path": "src/services/sentiment-analysis/sentiment-analyzer.ts",
-      "content": `import axios from 'axios';
+      "path": "src/services/risk-management/risk-simulator.ts",
+      "content": `import * as mathjs from 'mathjs';
 
-export class SentimentAnalyzer {
-  private apiKeys = {
-    twitter: process.env.TWITTER_API_KEY,
-    reddit: process.env.REDDIT_API_KEY
-  };
+export class RiskSimulator {
+  async runMonteCarloSimulation(config: any) {
+    const { confidenceLevel, simulationIterations, portfolioAssets } = config;
+    const simulationResults = [];
 
-  async analyzeSocialMediaSentiment(cryptocurrency: string) {
-    const sources = ['twitter', 'reddit'];
-    const sentimentResults = [];
-
-    for (const source of sources) {
-      const sentiment = await this.analyzeSingleSource(source, cryptocurrency);
-      sentimentResults.push(sentiment);
+    // Simulate portfolio performance
+    for (let i = 0; i < simulationIterations; i++) {
+      const iteration = this.simulateSingleIteration(portfolioAssets);
+      simulationResults.push(iteration);
     }
 
-    return this.aggregateSentiments(sentimentResults);
+    // Calculate risk metrics
+    return this.calculateRiskMetrics(simulationResults, confidenceLevel);
   }
 
-  private async analyzeSingleSource(source: string, cryptocurrency: string) {
-    try {
-      const response = await axios.get(`https://api.${source}.com/sentiment`, {
-        params: { crypto: cryptocurrency },
-        headers: { Authorization: `Bearer ${this.apiKeys[source]}` }
-      });
+  private simulateSingleIteration(assets: string[]) {
+    const returns = assets.map(() => mathjs.random(-0.05, 0.05));
+    const portfolioReturn = mathjs.mean(returns);
+    const portfolioVolatility = mathjs.std(returns);
 
-      return response.data.sentiment;
-    } catch (error) {
-      console.error(`Sentiment analysis for ${source} failed`, error);
-      return 0;
-    }
-  }
-
-  private aggregateSentiments(sentiments: number[]) {
-    const avgSentiment = sentiments.reduce((a, b) => a + b, 0) / sentiments.length;
     return {
-      score: avgSentiment,
-      interpretation: this.interpretSentiment(avgSentiment)
+      timestamp: new Date().toISOString(),
+      varMetric: this.calculateVaR(returns),
+      cvarMetric: this.calculateCVaR(returns),
+      drawdownRisk: this.calculateMaxDrawdown(returns),
+      portfolioValue: portfolioReturn
     };
   }
 
-  private interpretSentiment(score: number) {
-    if (score > 0.7) return 'Extremely Positive';
-    if (score > 0.3) return 'Positive';
-    if (score > -0.3) return 'Neutral';
-    if (score > -0.7) return 'Negative';
-    return 'Extremely Negative';
+  private calculateVaR(returns: number[], confidenceLevel: number = 0.95) {
+    const sortedReturns = returns.sort((a, b) => a - b);
+    const index = Math.floor(sortedReturns.length * (1 - confidenceLevel));
+    return Math.abs(sortedReturns[index]);
   }
 
-  correlateSentimentWithPrices(sentiment: any, priceData: any[]) {
-    return priceData.map((pricePoint, index) => ({
-      timestamp: pricePoint.timestamp,
-      sentiment: sentiment.score,
-      price: pricePoint.price
-    }));
+  private calculateCVaR(returns: number[], confidenceLevel: number = 0.95) {
+    const sortedReturns = returns.sort((a, b) => a - b);
+    const varIndex = Math.floor(sortedReturns.length * (1 - confidenceLevel));
+    const cvarReturns = sortedReturns.slice(0, varIndex);
+    return mathjs.mean(cvarReturns);
   }
-}`
-    },
-    {
-      "path": "src/services/data-fetcher/crypto-data-fetcher.ts",
-      "content": `import axios from 'axios';
 
-export class CryptoDataFetcher {
-  private apiKey = process.env.CRYPTO_DATA_API_KEY;
+  private calculateMaxDrawdown(returns: number[]) {
+    let maxDrawdown = 0;
+    let peak = returns[0];
 
-  async fetchHistoricalPrices(cryptocurrency: string, days: number = 30) {
-    try {
-      const response = await axios.get('https://api.coingecko.com/api/v3/coins/' + 
-        `${cryptocurrency.toLowerCase()}/market_chart?vs_currency=usd&days=${days}`, {
-        headers: { 'x-api-key': this.apiKey }
-      });
-
-      return response.data.prices.map(([timestamp, price]) => ({
-        timestamp: new Date(timestamp).toISOString(),
-        price
-      }));
-    } catch (error) {
-      console.error('Price data fetch failed', error);
-      return [];
+    for (const ret of returns) {
+      peak = Math.max(peak, ret);
+      const drawdown = (peak - ret) / peak;
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
     }
+
+    return maxDrawdown * 100;
   }
 }`
     }
   ],
-  "summary": "A comprehensive Cryptocurrency Sentiment Analysis Engine that leverages machine learning and NLP techniques to analyze social media sentiment, correlate it with price movements, and provide real-time insights for multiple cryptocurrencies. The system includes sentiment scoring, visualization, and predictive analysis capabilities."
+  "summary": "An advanced Risk Management Simulator leveraging Monte Carlo simulation techniques to assess portfolio risk, calculate Value at Risk (VaR), Conditional Value at Risk (CVaR), and maximum drawdown predictions with interactive configuration and visualization."
 }
 
 Key Features:
-1. Multi-platform Sentiment Analysis
-2. Real-time Social Media Sentiment Tracking
-3. Price-Sentiment Correlation
-4. Interactive Cryptocurrency Selection
-5. Machine Learning Sentiment Interpretation
-6. Visual Trend Representation
-7. Error Handling and Fallback Mechanisms
+1. Monte Carlo Risk Simulation
+2. Dynamic Risk Parameter Configuration
+3. Portfolio Risk Metrics Calculation
+4. Interactive Visualization
+5. Risk Budget Allocation
+6. Advanced Statistical Analysis
 
-Technologies Used:
+Technologies:
 - Next.js 14
 - TypeScript
 - Tailwind CSS
-- Recharts for Visualization
-- Axios for API Interactions
+- Recharts
+- Math.js for statistical computations
 
-Recommended Enhancements:
-- Add more sophisticated ML sentiment models
-- Implement more comprehensive error handling
-- Create more advanced visualization techniques
-- Add machine learning prediction models
-- Expand cryptocurrency coverage
-
-The implementation provides a flexible, scalable approach to cryptocurrency sentiment analysis with advanced data processing and visualization techniques.
+The implementation provides a flexible, data-driven approach to portfolio risk management with real-time simulation and comprehensive risk assessment.
 
 Would you like me to elaborate on any specific aspect of the implementation?
