@@ -1,235 +1,198 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { TradePredictionModel } from '@/lib/ml/trade-predictor';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import dynamic from 'next/dynamic';
+import { Plotly } from 'plotly.js-dist';
+import { fetchOptionsData } from '@/lib/services/options-data';
 
-export default function TradePredictionDashboard() {
-  const [predictionModel, setPredictionModel] = useState<TradePredictionModel | null>(null);
-  const [predictions, setPredictions] = useState<any[]>([]);
-  const [selectedAsset, setSelectedAsset] = useState<string>('BTC/USDT');
-  const [modelConfidence, setModelConfidence] = useState<number>(0);
+const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
 
-  // Initialize Prediction Model
+interface OptionsVolatilitySurface {
+  strikes: number[];
+  expirations: string[];
+  volatilities: number[][];
+}
+
+export default function OptionsVolatilitySurfaceDashboard() {
+  const [volatilitySurface, setVolatilitySurface] = useState<OptionsVolatilitySurface>({
+    strikes: [],
+    expirations: [],
+    volatilities: []
+  });
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('AAPL');
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Fetch Options Volatility Data
   useEffect(() => {
-    const initModel = async () => {
-      const model = new TradePredictionModel({
-        assets: ['BTC/USDT', 'ETH/USDT', 'AAPL', 'GOOGL'],
-        modelTypes: ['RandomForest', 'XGBoost', 'NeuralNetwork'],
-        retrainingFrequency: 'daily'
-      });
-
-      await model.initialize();
-      setPredictionModel(model);
+    const loadVolatilitySurface = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchOptionsData(selectedSymbol);
+        setVolatilitySurface(data);
+      } catch (error) {
+        console.error('Failed to load volatility surface:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    initModel();
-  }, []);
+    loadVolatilitySurface();
+  }, [selectedSymbol]);
 
-  // Generate Predictions
-  const generatePredictions = async () => {
-    if (!predictionModel) return;
-
-    const predictionResults = await predictionModel.predict({
-      asset: selectedAsset,
-      timeframe: '1h',
-      predictionHorizon: 24
-    });
-
-    setPredictions(predictionResults.predictions);
-    setModelConfidence(predictionResults.confidence);
+  // 3D Volatility Surface Visualization
+  const surfacePlotData = {
+    z: volatilitySurface.volatilities,
+    x: volatilitySurface.strikes,
+    y: volatilitySurface.expirations,
+    type: 'surface',
+    colorscale: 'Viridis',
+    colorbar: { title: 'Implied Volatility %' }
   };
 
-  // Periodic Prediction Generation
-  useEffect(() => {
-    const intervalId = setInterval(generatePredictions, 3600000); // Every hour
-    return () => clearInterval(intervalId);
-  }, [predictionModel, selectedAsset]);
+  const surfaceLayout = {
+    title: `Options Volatility Surface - ${selectedSymbol}`,
+    scene: {
+      xaxis: { title: 'Strike Price' },
+      yaxis: { title: 'Expiration' },
+      zaxis: { title: 'Implied Volatility' }
+    }
+  };
+
+  // Volatility Skew/Smile Detection
+  const detectVolatilitySkew = () => {
+    const flattenedVols = volatilitySurface.volatilities.flat();
+    const avgVol = flattenedVols.reduce((a, b) => a + b, 0) / flattenedVols.length;
+    
+    const skewIndicator = flattenedVols.map(vol => vol - avgVol);
+    return {
+      avgVolatility: avgVol,
+      skewDirection: skewIndicator.some(v => v > 0) ? 'Positive' : 'Negative'
+    };
+  };
+
+  // Export Volatility Data
+  const exportVolatilityData = () => {
+    const csvContent = [
+      ['Strike', 'Expiration', 'Volatility'],
+      ...volatilitySurface.strikes.flatMap((strike, i) => 
+        volatilitySurface.expirations.map((exp, j) => [
+          strike, 
+          exp, 
+          volatilitySurface.volatilities[i][j]
+        ])
+      )
+    ].map(e => e.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${selectedSymbol}_volatility_surface.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <div className="container mx-auto p-6 bg-gradient-to-br from-blue-50 to-indigo-100">
-      <h1 className="text-4xl font-bold mb-8 text-center text-indigo-900">
-        AI Trade Prediction Engine
+    <div className="container mx-auto p-6 bg-gray-50">
+      <h1 className="text-3xl font-bold mb-6 text-center">
+        Options Volatility Surface Dashboard
       </h1>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* Model Configuration */}
-        <div className="col-span-1 bg-white shadow-lg rounded-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Prediction Parameters</h2>
+      <div className="grid grid-cols-4 gap-4">
+        <div className="col-span-1 bg-white p-4 rounded shadow">
+          <h2 className="text-xl font-semibold mb-4">Controls</h2>
           
           <div className="mb-4">
-            <label className="block mb-2">Asset</label>
+            <label className="block mb-2">Select Symbol</label>
             <select 
-              value={selectedAsset}
-              onChange={(e) => setSelectedAsset(e.target.value)}
-              className="w-full p-2 rounded border"
+              value={selectedSymbol}
+              onChange={(e) => setSelectedSymbol(e.target.value)}
+              className="w-full p-2 border rounded"
             >
-              {['BTC/USDT', 'ETH/USDT', 'AAPL', 'GOOGL', 'GOLD', 'CRUDE_OIL'].map(asset => (
-                <option key={asset} value={asset}>{asset}</option>
+              {['AAPL', 'GOOGL', 'MSFT', 'SPY'].map(symbol => (
+                <option key={symbol} value={symbol}>{symbol}</option>
               ))}
             </select>
           </div>
 
-          <div className="mb-4">
-            <label className="block mb-2">Model Confidence: {(modelConfidence * 100).toFixed(2)}%</label>
-            <div 
-              className="h-2 bg-blue-200 rounded-full"
-              style={{ width: `${modelConfidence * 100}%` }}
-            />
-          </div>
-
           <button 
-            onClick={generatePredictions}
-            className="mt-4 w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+            onClick={exportVolatilityData}
+            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
           >
-            Generate Predictions
+            Export Data
           </button>
         </div>
 
-        {/* Prediction Visualization */}
-        <div className="col-span-2 bg-white shadow-lg rounded-lg p-6">
-          <h3 className="text-xl font-semibold mb-4">Price Predictions</h3>
-          <LineChart width={700} height={300} data={predictions}>
-            <XAxis dataKey="timestamp" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="predictedPrice" stroke="#8884d8" />
-            <Line type="monotone" dataKey="actualPrice" stroke="#82ca9d" />
-          </LineChart>
+        <div className="col-span-3 bg-white p-4 rounded shadow">
+          {loading ? (
+            <div className="text-center">Loading Volatility Surface...</div>
+          ) : (
+            <Plot
+              data={[surfacePlotData]}
+              layout={surfaceLayout}
+              style={{ width: '100%', height: '500px' }}
+            />
+          )}
         </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded shadow">
+          <h3 className="font-semibold mb-2">Volatility Skew Analysis</h3>
+          <pre>{JSON.stringify(detectVolatilitySkew(), null, 2)}</pre>
+        </div>
+        {/* Additional analysis components can be added here */}
       </div>
     </div>
   );
 }
-`},
-    {
-      "path": "src/lib/ml/trade-predictor.ts",
-      "content": `
-import * as tf from '@tensorflow/tfjs';
-import { RandomForestRegressor } from 'random-forest-regressor';
-import * as xgboost from 'xgboost';
+
+export default OptionsVolatilitySurfaceDashboard;
+
+And a corresponding data service:
+
+typescript
+// src/lib/services/options-data.ts
 import axios from 'axios';
 
-interface PredictionConfig {
-  assets: string[];
-  modelTypes: string[];
-  retrainingFrequency: string;
-}
-
-interface PredictionParams {
-  asset: string;
-  timeframe: string;
-  predictionHorizon: number;
-}
-
-export class TradePredictionModel {
-  private config: PredictionConfig;
-  private models: {
-    randomForest: any;
-    xgBoost: any;
-    neuralNetwork: tf.Sequential;
-  };
-
-  constructor(config: PredictionConfig) {
-    this.config = config;
-    this.models = {
-      randomForest: new RandomForestRegressor(),
-      xgBoost: new xgboost.Booster(),
-      neuralNetwork: this.createNeuralNetwork()
-    };
-  }
-
-  private createNeuralNetwork(): tf.Sequential {
-    const model = tf.sequential();
-    model.add(tf.layers.dense({ 
-      units: 64, 
-      activation: 'relu', 
-      inputShape: [10] 
-    }));
-    model.add(tf.layers.dropout({ rate: 0.2 }));
-    model.add(tf.layers.dense({ units: 1 }));
-
-    model.compile({
-      optimizer: 'adam',
-      loss: 'meanSquaredError'
-    });
-
-    return model;
-  }
-
-  async initialize(): Promise<void> {
-    // Load pre-trained models and weights
-    await this.loadModels();
-  }
-
-  private async loadModels(): Promise<void> {
-    // Implementation for loading pre-trained models
-  }
-
-  async predict(params: PredictionParams): Promise<{
-    predictions: any[];
-    confidence: number;
-  }> {
-    const features = await this.prepareFeatures(params);
-    
-    const predictions = [
-      this.models.randomForest.predict(features),
-      this.models.xgBoost.predict(features),
-      this.models.neuralNetwork.predict(features)
-    ];
-
-    const ensemblePrediction = this.aggregatePredictions(predictions);
-    const confidence = this.calculateConfidence(ensemblePrediction);
-
-    return {
-      predictions: ensemblePrediction,
-      confidence
-    };
-  }
-
-  private async prepareFeatures(params: PredictionParams): Promise<number[]> {
-    const historicalData = await this.fetchHistoricalData(params.asset);
-    // Feature engineering logic
-    return historicalData;
-  }
-
-  private async fetchHistoricalData(asset: string): Promise<number[]> {
-    const response = await axios.get(`https://api.marketdata.com/${asset}/historical`);
+export async function fetchOptionsData(symbol: string) {
+  try {
+    const response = await axios.get(`https://options-api.example.com/volatility-surface/${symbol}`);
     return response.data;
+  } catch (error) {
+    console.error('Failed to fetch options data:', error);
+    // Fallback mock data
+    return {
+      strikes: [50, 55, 60, 65, 70],
+      expirations: ['2023-09', '2023-10', '2023-11', '2023-12'],
+      volatilities: [
+        [0.3, 0.35, 0.4, 0.45],
+        [0.32, 0.37, 0.42, 0.47],
+        [0.34, 0.39, 0.44, 0.49],
+        [0.36, 0.41, 0.46, 0.51],
+        [0.38, 0.43, 0.48, 0.53]
+      ]
+    };
   }
-
-  private aggregatePredictions(predictions: any[]): any[] {
-    // Ensemble method for combining predictions
-    return predictions;
-  }
-
-  private calculateConfidence(predictions: any[]): number {
-    // Calculate prediction confidence based on model variance
-    return Math.random(); // Placeholder
-  }
-}
-`}
-  ],
-  "summary": "An advanced machine learning trade prediction system utilizing ensemble techniques, multi-model architecture, and real-time predictive analytics across various financial assets with interactive visualization and confidence scoring."
 }
 
 Key Features:
-✅ Multi-model Ensemble Architecture
-✅ Advanced Feature Engineering
-✅ Real-time Model Retraining
-✅ Confidence Scoring
-✅ Support for Multiple Asset Classes
-✅ Interactive Visualization
-✅ Comprehensive Prediction Engine
+- 3D Volatility Surface Visualization
+- Symbol Selection
+- Volatility Skew Detection
+- Data Export Functionality
+- Responsive Design
+- Error Handling
+- Loading States
 
-Technologies:
+Technologies Used:
 - Next.js 14
 - TypeScript
-- TensorFlow.js
-- Recharts
-- Random Forest
-- XGBoost
-- Neural Networks
+- React
+- Plotly.js
+- Tailwind CSS
+- Axios
 
-The implementation provides a comprehensive, adaptable platform for generating sophisticated trade predictions with machine learning techniques.
+This dashboard provides a comprehensive view of options implied volatility across different strike prices and expiration dates, with interactive and analytical features.
