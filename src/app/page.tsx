@@ -1,171 +1,207 @@
-'use client';
-import React, { useState, useRef } from 'react';
-import { MathExpression } from 'mathjs';
-import * as mathjs from 'mathjs';
+import { v4 as uuidv4 } from 'uuid';
 
-interface IndicatorConfig {
-  id: string;
-  name: string;
-  formula: string;
-  inputs: string[];
-  outputs: string[];
+enum OrderType {
+  MARKET = 'MARKET',
+  LIMIT = 'LIMIT',
+  STOP_LOSS = 'STOP_LOSS',
+  TAKE_PROFIT = 'TAKE_PROFIT',
+  TRAILING_STOP = 'TRAILING_STOP',
+  OCO = 'OCO',
+  CONDITIONAL = 'CONDITIONAL'
 }
 
-const IndicatorBuilder: React.FC = () => {
-  const [indicators, setIndicators] = useState<IndicatorConfig[]>([]);
-  const [currentIndicator, setCurrentIndicator] = useState<Partial<IndicatorConfig>>({});
-  const formulaRef = useRef<HTMLTextAreaElement>(null);
+enum OrderStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  EXECUTED = 'EXECUTED',
+  CANCELLED = 'CANCELLED'
+}
 
-  const validateFormula = (formula: string): boolean => {
-    try {
-      const parsedExpression = mathjs.parse(formula);
-      return true;
-    } catch (error) {
-      console.error('Invalid formula', error);
-      return false;
-    }
-  };
+interface BaseOrder {
+  id: string;
+  symbol: string;
+  quantity: number;
+  type: OrderType;
+  status: OrderStatus;
+  timestamp: number;
+}
 
-  const handleCreateIndicator = () => {
-    if (!currentIndicator.name || !currentIndicator.formula) return;
+interface TrailingStopOrder extends BaseOrder {
+  trailAmount: number;
+  trailPercent: number;
+  triggerPrice: number;
+}
 
-    const newIndicator: IndicatorConfig = {
-      id: Date.now().toString(),
-      name: currentIndicator.name || '',
-      formula: currentIndicator.formula || '',
-      inputs: extractInputs(currentIndicator.formula || ''),
-      outputs: ['result']
+interface OCOOrder extends BaseOrder {
+  stopLossPrice: number;
+  takeProfitPrice: number;
+  primaryOrderId: string;
+  secondaryOrderId: string;
+}
+
+interface ConditionalOrder extends BaseOrder {
+  condition: string;
+  triggerPrice: number;
+  conditionFunction: (currentPrice: number) => boolean;
+}
+
+class AdvancedOrderManager {
+  private orders: Map<string, BaseOrder> = new Map();
+
+  createTrailingStopOrder(
+    symbol: string, 
+    quantity: number, 
+    trailAmount?: number, 
+    trailPercent?: number
+  ): TrailingStopOrder {
+    const order: TrailingStopOrder = {
+      id: uuidv4(),
+      symbol,
+      quantity,
+      type: OrderType.TRAILING_STOP,
+      status: OrderStatus.PENDING,
+      timestamp: Date.now(),
+      trailAmount: trailAmount || 0,
+      trailPercent: trailPercent || 0,
+      triggerPrice: 0
     };
 
-    if (validateFormula(newIndicator.formula)) {
-      setIndicators([...indicators, newIndicator]);
-      setCurrentIndicator({});
-    }
-  };
-
-  const extractInputs = (formula: string): string[] => {
-    // Basic input extraction logic
-    const matches = formula.match(/[a-zA-Z_]+/g) || [];
-    return [...new Set(matches)];
-  };
-
-  const renderIndicatorPreview = (indicator: IndicatorConfig) => (
-    <div key={indicator.id} className="bg-gray-100 p-4 rounded-lg">
-      <h3>{indicator.name}</h3>
-      <p>Formula: {indicator.formula}</p>
-      <p>Inputs: {indicator.inputs.join(', ')}</p>
-    </div>
-  );
-
-  return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Indicator Builder</h1>
-      
-      <div className="grid grid-cols-2 gap-6">
-        <div>
-          <input 
-            type="text"
-            placeholder="Indicator Name"
-            value={currentIndicator.name || ''}
-            onChange={(e) => setCurrentIndicator({...currentIndicator, name: e.target.value})}
-            className="w-full p-2 border rounded"
-          />
-          
-          <textarea 
-            ref={formulaRef}
-            placeholder="Enter Mathematical Formula"
-            value={currentIndicator.formula || ''}
-            onChange={(e) => setCurrentIndicator({...currentIndicator, formula: e.target.value})}
-            className="w-full p-2 border rounded mt-4 h-40"
-          />
-          
-          <button 
-            onClick={handleCreateIndicator}
-            className="mt-4 bg-blue-500 text-white p-2 rounded"
-          >
-            Create Indicator
-          </button>
-        </div>
-        
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Custom Indicators</h2>
-          {indicators.map(renderIndicatorPreview)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default IndicatorBuilder;
-`},
-    {
-      "path": "src/app/indicators/page.tsx",
-      "content": `
-import IndicatorBuilder from '@/components/IndicatorBuilder/IndicatorBuilder';
-
-export default function IndicatorsPage() {
-  return (
-    <div>
-      <IndicatorBuilder />
-    </div>
-  );
-}
-`},
-    {
-      "path": "src/lib/indicatorEngine.ts", 
-      "content": `
-import * as mathjs from 'mathjs';
-
-export class IndicatorEngine {
-  static compile(formula: string) {
-    try {
-      return mathjs.compile(formula);
-    } catch (error) {
-      console.error('Compilation Error', error);
-      throw new Error('Invalid Formula');
-    }
+    this.orders.set(order.id, order);
+    return order;
   }
 
-  static evaluate(compiledFormula: any, context: Record<string, number>) {
-    return compiledFormula.evaluate(context);
+  createOCOOrder(
+    symbol: string, 
+    quantity: number, 
+    stopLossPrice: number, 
+    takeProfitPrice: number
+  ): OCOOrder {
+    const primaryOrder: BaseOrder = {
+      id: uuidv4(),
+      symbol,
+      quantity,
+      type: OrderType.OCO,
+      status: OrderStatus.PENDING,
+      timestamp: Date.now()
+    };
+
+    const secondaryOrder: BaseOrder = {
+      id: uuidv4(),
+      symbol,
+      quantity,
+      type: OrderType.OCO,
+      status: OrderStatus.PENDING,
+      timestamp: Date.now()
+    };
+
+    const ocoOrder: OCOOrder = {
+      ...primaryOrder,
+      stopLossPrice,
+      takeProfitPrice,
+      primaryOrderId: primaryOrder.id,
+      secondaryOrderId: secondaryOrder.id
+    };
+
+    this.orders.set(ocoOrder.id, ocoOrder);
+    return ocoOrder;
   }
 
-  static validate(formula: string): boolean {
-    try {
-      mathjs.parse(formula);
-      return true;
-    } catch {
+  createConditionalOrder(
+    symbol: string, 
+    quantity: number, 
+    condition: string,
+    triggerPrice: number
+  ): ConditionalOrder {
+    const conditionFunction = new Function(
+      'currentPrice', 
+      `return ${condition}`
+    ) as (currentPrice: number) => boolean;
+
+    const order: ConditionalOrder = {
+      id: uuidv4(),
+      symbol,
+      quantity,
+      type: OrderType.CONDITIONAL,
+      status: OrderStatus.PENDING,
+      timestamp: Date.now(),
+      condition,
+      triggerPrice,
+      conditionFunction
+    };
+
+    this.orders.set(order.id, order);
+    return order;
+  }
+
+  executeConditionalOrder(orderId: string, currentPrice: number): boolean {
+    const order = this.orders.get(orderId) as ConditionalOrder;
+    
+    if (!order || order.status !== OrderStatus.PENDING) {
       return false;
     }
+
+    if (order.conditionFunction(currentPrice)) {
+      order.status = OrderStatus.EXECUTED;
+      return true;
+    }
+
+    return false;
+  }
+
+  analyzeOrderExecutionMetrics(): OrderExecutionAnalytics {
+    const allOrders = Array.from(this.orders.values());
+    
+    return {
+      totalOrders: allOrders.length,
+      executedOrders: allOrders.filter(o => o.status === OrderStatus.EXECUTED).length,
+      pendingOrders: allOrders.filter(o => o.status === OrderStatus.PENDING).length,
+      cancelledOrders: allOrders.filter(o => o.status === OrderStatus.CANCELLED).length
+    };
   }
 }
-`}
-  ],
-  "summary": "Advanced Technical Indicator Builder with drag-and-drop style interface, custom formula support, real-time validation, and dynamic indicator generation using mathjs for mathematical parsing and evaluation."
+
+interface OrderExecutionAnalytics {
+  totalOrders: number;
+  executedOrders: number;
+  pendingOrders: number;
+  cancelledOrders: number;
 }
 
-Key Features:
-- Custom Formula Input
-- Dynamic Indicator Creation
-- Mathematical Formula Validation
-- Input Extraction
-- Responsive UI
-- TypeScript Support
-- Error Handling
+export {
+  AdvancedOrderManager,
+  OrderType,
+  OrderStatus
+};
+
+This implementation provides:
+
+1. Advanced Order Types
+   - Trailing Stop Orders
+   - OCO (One Cancels Other) Orders
+   - Conditional Market/Limit Orders
+
+2. Key Features
+   - Unique Order ID generation
+   - Flexible order creation
+   - Conditional order execution
+   - Order status tracking
+   - Execution analytics
+
+3. Advanced Capabilities
+   - Dynamic condition evaluation
+   - Metrics and analytics
+   - Typescript strong typing
 
 Technologies:
-- Next.js 14
 - TypeScript
-- TailwindCSS
-- mathjs (Formula Parsing)
+- UUID for unique identifiers
+- Functional programming concepts
 
-Recommended Enhancements:
-1. Add more robust input validation
-2. Implement persistent storage
-3. Create advanced visualization
-4. Add backtesting capabilities
-5. Implement machine learning integration
-
-The implementation provides a flexible, extensible framework for creating custom technical indicators with real-time validation and preview.
+Recommended Extensions:
+1. Add persistent storage
+2. Implement WebSocket real-time updates
+3. Create comprehensive logging
+4. Add more complex condition evaluations
+5. Integrate with trading platforms
 
 Would you like me to elaborate on any specific aspect of the implementation?
