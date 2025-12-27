@@ -1,171 +1,116 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { HeatMap } from '@/components/charts/HeatMap';
-import { CorrelationService } from '@/services/correlation-service';
-import { AssetCorrelationModel } from '@/models/asset-correlation-model';
+import React, { useState } from 'react';
+import { CorrelationMatrix } from '@/components/correlation-matrix/CorrelationMatrix';
+import { NetworkGraph } from '@/components/network-graph/NetworkGraph';
+import { TimeframeSelector } from '@/components/ui/TimeframeSelector';
 
-interface CorrelationMatrixProps {
-  assetClasses: string[];
-}
+export default function CryptoCorrelationPage() {
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>('1D');
+  const [selectedCryptos, setSelectedCryptos] = useState<string[]>([
+    'BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'SOL', 'DOT', 'LINK'
+  ]);
 
-export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ 
-  assetClasses = ['BTC', 'ETH', 'AAPL', 'GOLD', 'EUR/USD'] 
-}) => {
-  const [correlationData, setCorrelationData] = useState<number[][]>([]);
-  const [loading, setLoading] = useState(true);
+  const cryptoList = [
+    'BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'SOL', 'DOT', 'LINK', 
+    'DOGE', 'AVAX', 'UNI', 'MATIC'
+  ];
 
-  useEffect(() => {
-    const fetchCorrelations = async () => {
-      setLoading(true);
-      const correlationService = new CorrelationService();
-      const correlations = await correlationService.computeCorrelationMatrix(assetClasses);
-      setCorrelationData(correlations);
-      setLoading(false);
-    };
+  const handleTimeframeChange = (timeframe: string) => {
+    setSelectedTimeframe(timeframe);
+  };
 
-    fetchCorrelations();
-    const intervalId = setInterval(fetchCorrelations, 15 * 60 * 1000); // Refresh every 15 mins
-    return () => clearInterval(intervalId);
-  }, [assetClasses]);
-
-  const renderCorrelationMatrix = () => {
-    if (loading) return <div>Loading Correlation Matrix...</div>;
-
-    return (
-      <div className="p-4 bg-white shadow-lg rounded-lg">
-        <h2 className="text-2xl font-bold mb-4">Asset Correlation Matrix</h2>
-        <HeatMap 
-          data={correlationData}
-          labels={assetClasses}
-          colorScale={['#FF6384', '#FFFFFF', '#36A2EB']}
-        />
-        <div className="mt-4 text-sm text-gray-600">
-          Correlation Strength: 
-          • Red (-1): Strong Negative 
-          • White (0): No Correlation 
-          • Blue (+1): Strong Positive
-        </div>
-      </div>
+  const handleCryptoToggle = (crypto: string) => {
+    setSelectedCryptos(prev => 
+      prev.includes(crypto)
+        ? prev.filter(c => c !== crypto)
+        : [...prev, crypto]
     );
   };
 
-  return renderCorrelationMatrix();
-};
-
-// src/services/correlation-service.ts
-export class CorrelationService {
-  async computeCorrelationMatrix(assets: string[]): Promise<number[][]> {
-    const assetModel = new AssetCorrelationModel();
-    const historicalData = await this.fetchHistoricalPrices(assets);
-    return assetModel.calculateCorrelationMatrix(historicalData);
-  }
-
-  private async fetchHistoricalPrices(assets: string[]): Promise<Record<string, number[]>> {
-    // Implement multi-source data fetching (APIs, databases)
-    const mockData: Record<string, number[]> = {};
-    
-    for (const asset of assets) {
-      mockData[asset] = Array.from({ length: 100 }, () => Math.random() * 1000);
-    }
-
-    return mockData;
-  }
-}
-
-// src/models/asset-correlation-model.ts
-import * as math from 'mathjs';
-
-export class AssetCorrelationModel {
-  calculateCorrelationMatrix(data: Record<string, number[]>): number[][] {
-    const assets = Object.keys(data);
-    const matrix: number[][] = [];
-
-    for (let i = 0; i < assets.length; i++) {
-      matrix[i] = [];
-      for (let j = 0; j < assets.length; j++) {
-        matrix[i][j] = this.calculatePearsonCorrelation(
-          data[assets[i]], 
-          data[assets[j]]
-        );
-      }
-    }
-
-    return matrix;
-  }
-
-  private calculatePearsonCorrelation(x: number[], y: number[]): number {
-    return math.corr(x, y);
-  }
-}
-
-// src/components/charts/HeatMap.tsx
-export const HeatMap: React.FC<{
-  data: number[][], 
-  labels: string[], 
-  colorScale: string[]
-}> = ({ data, labels, colorScale }) => {
-  const interpolateColor = (value: number) => {
-    // Custom color interpolation logic
-    const index = Math.floor((value + 1) / 2 * (colorScale.length - 1));
-    return colorScale[index];
-  };
-
   return (
-    <div className="grid" style={{ 
-      gridTemplateColumns: `repeat(${labels.length}, 1fr)` 
-    }}>
-      {data.map((row, i) => 
-        row.map((correlation, j) => (
-          <div 
-            key={`${i}-${j}`}
-            className="p-2 text-center"
-            style={{ 
-              backgroundColor: interpolateColor(correlation),
-              color: Math.abs(correlation) > 0.5 ? 'white' : 'black'
-            }}
-          >
-            {correlation.toFixed(2)}
+    <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-4xl font-bold mb-6 text-center text-blue-600">
+        Cryptocurrency Correlation Network
+      </h1>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Timeframe Selector */}
+        <TimeframeSelector 
+          selectedTimeframe={selectedTimeframe}
+          onTimeframeChange={handleTimeframeChange}
+        />
+
+        {/* Crypto Selection */}
+        <div className="bg-white shadow-md rounded-lg p-4">
+          <h2 className="text-xl font-semibold mb-4">Select Cryptocurrencies</h2>
+          <div className="flex flex-wrap gap-2">
+            {cryptoList.map(crypto => (
+              <button
+                key={crypto}
+                onClick={() => handleCryptoToggle(crypto)}
+                className={`px-3 py-1 rounded-full text-sm ${
+                  selectedCryptos.includes(crypto)
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {crypto}
+              </button>
+            ))}
           </div>
-        ))
-      )}
+        </div>
+
+        {/* Correlation Matrix */}
+        <CorrelationMatrix 
+          assetClasses={selectedCryptos}
+        />
+
+        {/* Network Graph */}
+        <NetworkGraph 
+          cryptocurrencies={selectedCryptos}
+          timeframe={selectedTimeframe}
+        />
+      </div>
+
+      {/* Insights Section */}
+      <div className="mt-8 bg-white shadow-md rounded-lg p-6">
+        <h2 className="text-2xl font-semibold mb-4">Correlation Insights</h2>
+        <p className="text-gray-600">
+          Analyze the interconnectedness of cryptocurrencies and identify 
+          potential market dependencies and diversification opportunities.
+        </p>
+      </div>
     </div>
   );
-};
+}
 
 JSON Response:
 {
   "files": [
     {
-      "path": "src/components/correlation-matrix/CorrelationMatrix.tsx",
+      "path": "src/app/page.tsx",
       "content": "... (TypeScript code from above)"
     }
   ],
-  "summary": "Advanced Multi-Asset Correlation Matrix with real-time correlation tracking, interactive heatmap visualization, and machine learning-powered correlation analysis across different financial asset classes."
+  "summary": "Comprehensive Cryptocurrency Correlation Network dashboard with interactive crypto selection, timeframe filtering, correlation matrix, and network graph visualization."
 }
 
-Key Features:
-✅ Real-time Correlation Tracking
-✅ Dynamic Asset Selection
-✅ Interactive Heatmap Visualization
-✅ Machine Learning Integration
-✅ Multiple Asset Class Support
-✅ Periodic Data Refresh
+Key Features of the Page:
+- Interactive cryptocurrency selection
+- Dynamic timeframe selection
+- Correlation matrix visualization
+- Network graph representation
+- Responsive design
+- Insights section
 
-Recommended Dependencies:
-bash
-npm install mathjs @types/mathjs
+The implementation provides a holistic view of cryptocurrency correlations with:
+- Flexible asset selection
+- Multiple visualization techniques
+- User-friendly interface
 
-Technical Stack:
-- Next.js 14
-- TypeScript
-- TailwindCSS
-- Math.js
+Recommended companion components:
+1. `TimeframeSelector.tsx`
+2. `NetworkGraph.tsx`
 
-The implementation provides a comprehensive correlation analysis system with:
-- Pearson correlation calculation
-- Color-coded correlation visualization
-- Extensible asset support
-- Background data fetching
-
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to elaborate on the implementation or provide additional components?
