@@ -1,204 +1,183 @@
-'use client'
+'use client';
 
-import React, { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import { CorrelationService } from '@/services/correlation/correlation-service';
+import React, { useState } from 'react';
+import RiskCalculator from '@/components/RiskCalculator';
+import PositionSizingCalculator from '@/components/PositionSizingCalculator';
+import PortfolioRiskAnalysis from '@/components/PortfolioRiskAnalysis';
+import MonteCarloSimulation from '@/components/MonteCarloSimulation';
 
-// Dynamically import heatmap to avoid SSR issues
-const HeatMap = dynamic(() => import('react-heatmap-grid'), { ssr: false });
+export default function RiskManagementDashboard() {
+  const [activeTab, setActiveTab] = useState('position-sizing');
 
-interface AssetCorrelation {
-  symbol: string;
-  correlations: { [key: string]: number };
-}
-
-export default function CrossAssetCorrelationMatrix() {
-  const [assets, setAssets] = useState<string[]>(['BTC', 'ETH', 'AAPL', 'GOOGL', 'GOLD', 'EUR/USD']);
-  const [correlationMatrix, setCorrelationMatrix] = useState<number[][]>([]);
-  const [correlationService] = useState(new CorrelationService());
-
-  const calculateCorrelations = async () => {
-    try {
-      const matrix = await correlationService.computeCorrelationMatrix(assets);
-      setCorrelationMatrix(matrix);
-    } catch (error) {
-      console.error('Correlation calculation error', error);
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'position-sizing':
+        return <PositionSizingCalculator />;
+      case 'portfolio-risk':
+        return <PortfolioRiskAnalysis />;
+      case 'monte-carlo':
+        return <MonteCarloSimulation />;
+      default:
+        return <RiskCalculator />;
     }
-  };
-
-  useEffect(() => {
-    calculateCorrelations();
-  }, [assets]);
-
-  const renderCorrelationCell = (value: number) => {
-    const absValue = Math.abs(value);
-    const hue = value >= 0 ? 120 : 0; // Green for positive, Red for negative
-    return (
-      <div 
-        style={{
-          backgroundColor: `hsla(${hue}, 70%, 50%, ${absValue})`,
-          color: 'white',
-          padding: '5px',
-          textAlign: 'center'
-        }}
-      >
-        {value.toFixed(2)}
-      </div>
-    );
   };
 
   return (
-    <div className="container mx-auto p-8 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-8 text-center text-blue-600">
-        Cross-Asset Correlation Matrix
-      </h1>
+    <div className="container mx-auto p-6">
+      <h1 className="text-4xl font-bold mb-6 text-center">Advanced Risk Management</h1>
+      
+      <div className="flex justify-center mb-6">
+        {['position-sizing', 'portfolio-risk', 'monte-carlo', 'risk-calculator'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 mx-2 ${
+              activeTab === tab 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700'
+            } rounded`}
+          >
+            {tab.replace('-', ' ').toUpperCase()}
+          </button>
+        ))}
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Asset Selection */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Asset Selection</h2>
-          <div className="flex flex-wrap gap-2">
-            {['BTC', 'ETH', 'AAPL', 'GOOGL', 'GOLD', 'EUR/USD', 'MSFT', 'AMZN'].map(asset => (
-              <button
-                key={asset}
-                onClick={() => 
-                  setAssets(prev => 
-                    prev.includes(asset) 
-                      ? prev.filter(a => a !== asset) 
-                      : [...prev, asset]
-                  )
-                }
-                className={`px-3 py-1 rounded ${
-                  assets.includes(asset) 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-200 text-gray-700'
-                }`}
-              >
-                {asset}
-              </button>
-            ))}
-          </div>
+      {renderActiveTab()}
+    </div>
+  );
+}`
+        },
+        {
+            "path": "src/components/RiskCalculator.tsx",
+            "content": `import React, { useState } from 'react';
+import { calculateKellyCriterion, calculateRiskReward } from '@/utils/risk-calculations';
+
+export default function RiskCalculator() {
+  const [winProbability, setWinProbability] = useState(0.55);
+  const [winAmount, setWinAmount] = useState(1.5);
+  const [lossAmount, setLossAmount] = useState(1);
+
+  const kellyCriterion = calculateKellyCriterion(winProbability, winAmount, lossAmount);
+  const riskRewardRatio = calculateRiskReward(winProbability, winAmount, lossAmount);
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-semibold mb-4">Risk Calculator</h2>
+      
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label>Win Probability</label>
+          <input 
+            type="number" 
+            value={winProbability} 
+            onChange={(e) => setWinProbability(Number(e.target.value))}
+            className="w-full p-2 border rounded"
+            step={0.01}
+            min={0}
+            max={1}
+          />
         </div>
-
-        {/* Correlation Metrics */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Correlation Insights</h2>
-          <div>
-            <div>
-              <strong>Correlation Method:</strong> Pearson & Spearman
-            </div>
-            <div>
-              <strong>Assets Analyzed:</strong> {assets.join(', ')}
-            </div>
-            <div>
-              <strong>Statistical Significance:</strong> p-value {'<'} 0.05
-            </div>
-          </div>
+        <div>
+          <label>Win Amount</label>
+          <input 
+            type="number" 
+            value={winAmount} 
+            onChange={(e) => setWinAmount(Number(e.target.value))}
+            className="w-full p-2 border rounded"
+          />
+        </div>
+        <div>
+          <label>Loss Amount</label>
+          <input 
+            type="number" 
+            value={lossAmount} 
+            onChange={(e) => setLossAmount(Number(e.target.value))}
+            className="w-full p-2 border rounded"
+          />
         </div>
       </div>
 
-      {/* Correlation Matrix Visualization */}
-      <div className="mt-8 bg-white p-6 rounded-lg shadow-md overflow-x-auto">
-        <h2 className="text-2xl font-semibold mb-4">Correlation Heatmap</h2>
-        {correlationMatrix.length > 0 ? (
-          <div className="grid grid-flow-col auto-cols-max gap-1">
-            {/* Asset Labels */}
-            <div className="grid grid-rows-subgrid">
-              {assets.map(asset => (
-                <div key={asset} className="text-right pr-2 self-center">{asset}</div>
-              ))}
-            </div>
-
-            {/* Correlation Grid */}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(50px,1fr))]">
-              {correlationMatrix.map((row, rowIndex) => 
-                row.map((value, colIndex) => (
-                  <div key={`${rowIndex}-${colIndex}`}>
-                    {renderCorrelationCell(value)}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        ) : (
-          <p>Calculating correlations...</p>
-        )}
-      </div>
-
-      {/* Export and ML Prediction Section */}
-      <div className="mt-8 grid grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Export</h2>
-          <button className="bg-blue-500 text-white px-4 py-2 rounded">
-            Export Correlation Matrix
-          </button>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Predictive Insights</h2>
-          <button className="bg-green-500 text-white px-4 py-2 rounded">
-            Generate Correlation Forecast
-          </button>
-        </div>
+      <div className="mt-6">
+        <h3 className="text-xl font-semibold">Results</h3>
+        <div>Kelly Criterion: {(kellyCriterion * 100).toFixed(2)}%</div>
+        <div>Risk/Reward Ratio: {riskRewardRatio.toFixed(2)}</div>
       </div>
     </div>
   );
+}`
+        },
+        {
+            "path": "src/utils/risk-calculations.ts",
+            "content": `export function calculateKellyCriterion(
+  winProbability: number, 
+  winAmount: number, 
+  lossAmount: number
+): number {
+  const winChance = winProbability;
+  const lossChance = 1 - winProbability;
+
+  return (winChance / lossAmount) - (lossChance / winAmount);
 }
 
-And the corresponding service:
+export function calculateRiskReward(
+  winProbability: number, 
+  winAmount: number, 
+  lossAmount: number
+): number {
+  return winAmount / lossAmount;
+}
 
-typescript
-// src/services/correlation/correlation-service.ts
-import * as mathjs from 'mathjs';
-import { fetchHistoricalPrices } from '@/services/data-providers/market-data';
+export function calculatePositionSize(
+  accountSize: number, 
+  riskPercentage: number, 
+  stopLossAmount: number,
+  entryPrice: number
+): number {
+  const riskAmount = accountSize * riskPercentage;
+  return riskAmount / stopLossAmount;
+}
 
-export class CorrelationService {
-  async computeCorrelationMatrix(assets: string[]): Promise<number[][]> {
-    const historicalData = await Promise.all(
-      assets.map(asset => fetchHistoricalPrices(asset, '1y'))
-    );
+export function simulateMonteCarloDrawdown(
+  returns: number[], 
+  iterations: number = 1000, 
+  confidence: number = 0.95
+): number {
+  const drawdowns: number[] = [];
 
-    const returns = historicalData.map(
-      prices => this.calculateReturns(prices.map(p => p.close))
-    );
+  for (let i = 0; i < iterations; i++) {
+    let peak = 100;
+    let current = 100;
+    let maxDrawdown = 0;
 
-    return this.calculatePearsonCorrelations(returns);
-  }
-
-  private calculateReturns(prices: number[]): number[] {
-    return prices.slice(1).map((price, i) => 
-      (price - prices[i]) / prices[i]
-    );
-  }
-
-  private calculatePearsonCorrelations(returns: number[][]): number[][] {
-    const matrix: number[][] = [];
-    
-    for (let i = 0; i < returns.length; i++) {
-      const row: number[] = [];
-      for (let j = 0; j < returns.length; j++) {
-        const correlation = mathjs.corr(returns[i], returns[j]);
-        row.push(correlation);
-      }
-      matrix.push(row);
+    for (let ret of returns) {
+      current *= (1 + ret);
+      peak = Math.max(peak, current);
+      maxDrawdown = Math.max(maxDrawdown, (peak - current) / peak);
     }
 
-    return matrix;
+    drawdowns.push(maxDrawdown * 100);
   }
 
-  // Additional methods for advanced correlation analysis...
+  drawdowns.sort((a, b) => a - b);
+  return drawdowns[Math.floor(drawdowns.length * confidence)];
+}`
+        }
+    ],
+    "summary": "Advanced Risk Management Calculator with multiple interactive components including Kelly Criterion, Position Sizing, Monte Carlo Simulation, and comprehensive risk analysis tools. Built with Next.js, TypeScript, and TailwindCSS, providing a flexible and dynamic risk management dashboard."
 }
 
-This implementation provides a comprehensive Cross-Asset Correlation Matrix with:
-- Dynamic asset selection
-- Real-time correlation calculation
-- Interactive heatmap visualization
-- Support for multiple asset classes
-- Export and ML prediction placeholders
+Key Features:
+1. Risk Calculation Dashboard
+2. Kelly Criterion Implementation
+3. Position Sizing Calculator
+4. Monte Carlo Simulation
+5. Dynamic Tab-based Interface
+6. Configurable Risk Parameters
 
-Recommended npm packages:
-- react-heatmap-grid
-- mathjs
-- next.js
-- tailwindcss
+Recommended Next Steps:
+- Implement more advanced statistical models
+- Add real-time data integration
+- Create machine learning predictive risk models
+- Enhance visualization components
 
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to expand on any specific aspect of the implementation?
