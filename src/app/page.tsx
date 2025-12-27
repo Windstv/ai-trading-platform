@@ -1,71 +1,60 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import { 
-    calculateCorrelationMatrix, 
-    fetchMarketData 
-} from '@/lib/market-correlation/correlation-service';
-import CorrelationHeatmap from '@/components/CorrelationMatrix/CorrelationHeatmap';
-import TimeRangeSelector from '@/components/CorrelationMatrix/TimeRangeSelector';
-import AssetClassFilter from '@/components/CorrelationMatrix/AssetClassFilter';
-import CorrelationStatistics from '@/components/CorrelationMatrix/CorrelationStatistics';
+    fetchEconomicEvents, 
+    predictEventImpact, 
+    analyzeMarketSentiment 
+} from '@/lib/economic-calendar/economic-service';
 
-export default function MarketCorrelationDashboard() {
-    const [correlationData, setCorrelationData] = useState(null);
-    const [timeRange, setTimeRange] = useState('1M');
-    const [selectedAssetClasses, setSelectedAssetClasses] = useState([
-        'stocks', 'crypto', 'forex', 'commodities'
-    ]);
+import EventCalendar from '@/components/EconomicCalendar/EventCalendar';
+import EventImpactAnalysis from '@/components/EconomicCalendar/EventImpactAnalysis';
+import MarketSentimentIndicator from '@/components/EconomicCalendar/MarketSentimentIndicator';
+
+export default function EconomicCalendarPage() {
+    const [events, setEvents] = useState([]);
+    const [selectedEvent, setSelectedEvent] = useState(null);
+    const [marketSentiment, setMarketSentiment] = useState(null);
 
     useEffect(() => {
-        async function loadCorrelationData() {
-            const marketData = await fetchMarketData(timeRange, selectedAssetClasses);
-            const correlation = calculateCorrelationMatrix(marketData);
-            setCorrelationData(correlation);
+        async function loadEconomicEvents() {
+            const fetchedEvents = await fetchEconomicEvents({
+                markets: ['US', 'EU', 'Asia', 'Crypto'],
+                timeframe: 'upcoming'
+            });
+            setEvents(fetchedEvents);
         }
-        loadCorrelationData();
-    }, [timeRange, selectedAssetClasses]);
+        loadEconomicEvents();
+    }, []);
 
-    const handleExport = () => {
-        // Implement data export logic
-        const csvData = convertToCSV(correlationData);
-        downloadCSV(csvData, 'market_correlation_matrix.csv');
+    const handleEventSelect = async (event) => {
+        setSelectedEvent(event);
+        
+        const impact = await predictEventImpact(event);
+        const sentiment = await analyzeMarketSentiment(event);
+        
+        setMarketSentiment(sentiment);
     };
 
     return (
         <div className="container mx-auto p-6 bg-gray-50">
             <h1 className="text-4xl font-bold mb-6 text-center text-blue-800">
-                Market Correlation Matrix
+                Economic Calendar & Market Impact
             </h1>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2">
-                    <TimeRangeSelector 
-                        selectedRange={timeRange}
-                        onRangeChange={setTimeRange}
-                    />
-                    <AssetClassFilter
-                        selectedClasses={selectedAssetClasses}
-                        onClassesChange={setSelectedAssetClasses}
+                    <EventCalendar 
+                        events={events} 
+                        onEventSelect={handleEventSelect}
                     />
                 </div>
-                <div className="text-right">
-                    <button 
-                        onClick={handleExport}
-                        className="bg-green-500 text-white px-4 py-2 rounded"
-                    >
-                        Export Data
-                    </button>
-                </div>
-
-                {correlationData && (
-                    <>
-                        <div className="md:col-span-2">
-                            <CorrelationHeatmap data={correlationData} />
-                        </div>
-                        <CorrelationStatistics data={correlationData} />
-                    </>
+                
+                {selectedEvent && (
+                    <div>
+                        <EventImpactAnalysis event={selectedEvent} />
+                        <MarketSentimentIndicator sentiment={marketSentiment} />
+                    </div>
                 )}
             </div>
         </div>
@@ -73,103 +62,118 @@ export default function MarketCorrelationDashboard() {
 }`
         },
         {
-            "path": "src/lib/market-correlation/correlation-service.ts",
-            "content": `import * as math from 'mathjs';
+            "path": "src/lib/economic-calendar/economic-service.ts",
+            "content": `import axios from 'axios';
 
-interface MarketData {
-    symbol: string;
-    assetClass: string;
-    prices: number[];
+interface EconomicEvent {
+    id: string;
+    title: string;
+    date: string;
+    country: string;
+    impact: 'low' | 'medium' | 'high';
+    expectedValue?: number;
+    actualValue?: number;
 }
 
-interface CorrelationMatrix {
-    matrix: number[][];
-    labels: string[];
+interface EventFilter {
+    markets?: string[];
+    timeframe?: 'past' | 'upcoming' | 'all';
+    impactLevel?: 'low' | 'medium' | 'high';
 }
 
-export async function fetchMarketData(
-    timeRange: string, 
-    assetClasses: string[]
-): Promise<MarketData[]> {
-    // Implement data fetching from API or data source
-    const mockData: MarketData[] = [
-        { 
-            symbol: 'AAPL', 
-            assetClass: 'stocks', 
-            prices: [150, 155, 152, 153, 154] 
-        },
-        // Add more mock data for different assets
-    ];
-
-    return mockData.filter(asset => 
-        assetClasses.includes(asset.assetClass)
-    );
-}
-
-export function calculateCorrelationMatrix(
-    marketData: MarketData[]
-): CorrelationMatrix {
-    const prices = marketData.map(asset => asset.prices);
-    const labels = marketData.map(asset => asset.symbol);
-
-    const correlationMatrix = math.corr(prices);
-
-    return {
-        matrix: correlationMatrix,
-        labels: labels
+interface EventImpact {
+    volatilityPrediction: number;
+    marketMovementDirection: 'bullish' | 'bearish' | 'neutral';
+    potentialAssetImpact: {
+        [assetClass: string]: number;
     };
 }
 
-export function calculateStatisticalSignificance(
-    correlationMatrix: CorrelationMatrix
-): number[][] {
-    // Implement statistical significance calculation
-    return correlationMatrix.matrix.map(row => 
-        row.map(value => calculatePValue(value))
-    );
+interface MarketSentiment {
+    overallSentiment: 'positive' | 'negative' | 'neutral';
+    confidenceScore: number;
+    contributingFactors: string[];
 }
 
-function calculatePValue(correlation: number): number {
-    // Simplified p-value calculation
-    return 2 * (1 - Math.abs(correlation));
+export async function fetchEconomicEvents(filter: EventFilter): Promise<EconomicEvent[]> {
+    try {
+        const response = await axios.get('/api/economic-events', { params: filter });
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch economic events', error);
+        return [];
+    }
+}
+
+export async function predictEventImpact(event: EconomicEvent): Promise<EventImpact> {
+    const aiPredictionEndpoint = '/api/predict-event-impact';
+    const response = await axios.post(aiPredictionEndpoint, { event });
+    return response.data;
+}
+
+export async function analyzeMarketSentiment(event: EconomicEvent): Promise<MarketSentiment> {
+    const sentimentAnalysisEndpoint = '/api/market-sentiment';
+    const response = await axios.post(sentimentAnalysisEndpoint, { event });
+    return response.data;
+}
+
+export function adjustTradingStrategy(impact: EventImpact): object {
+    // Implement dynamic trading strategy adjustment logic
+    const riskAdjustment = calculateRiskParameters(impact);
+    return riskAdjustment;
+}
+
+function calculateRiskParameters(impact: EventImpact) {
+    // Complex risk calculation based on event impact
+    return {
+        stopLoss: impact.volatilityPrediction * 0.05,
+        takeProfit: impact.volatilityPrediction * 0.1,
+        positionSizing: impact.marketMovementDirection === 'bullish' ? 'increase' : 'decrease'
+    };
 }`
         },
         {
-            "path": "src/components/CorrelationMatrix/CorrelationHeatmap.tsx",
+            "path": "src/components/EconomicCalendar/EventCalendar.tsx",
             "content": `import React from 'react';
-import { scaleLinear } from 'd3-scale';
 
-interface CorrelationHeatmapProps {
-    data: {
-        matrix: number[][];
-        labels: string[];
-    };
+interface EventCalendarProps {
+    events: Array<{
+        id: string;
+        title: string;
+        date: string;
+        country: string;
+        impact: 'low' | 'medium' | 'high';
+    }>;
+    onEventSelect: (event: any) => void;
 }
 
-export default function CorrelationHeatmap({ data }: CorrelationHeatmapProps) {
-    const colorScale = scaleLinear<string>()
-        .domain([-1, 0, 1])
-        .range(['red', 'white', 'blue']);
+export default function EventCalendar({ events, onEventSelect }: EventCalendarProps) {
+    const impactColorMap = {
+        low: 'bg-green-100',
+        medium: 'bg-yellow-100',
+        high: 'bg-red-100'
+    };
 
     return (
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">Correlation Heatmap</h2>
-            <div className="grid" style={{
-                gridTemplateColumns: `repeat(${data.labels.length}, 1fr)`
-            }}>
-                {data.matrix.map((row, i) => (
-                    row.map((value, j) => (
-                        <div 
-                            key={`${i}-${j}`}
-                            className="p-2 text-center"
-                            style={{ 
-                                backgroundColor: colorScale(value),
-                                color: Math.abs(value) > 0.5 ? 'white' : 'black'
-                            }}
-                        >
-                            {value.toFixed(2)}
+        <div className="bg-white rounded-lg shadow-md">
+            <div className="p-4 border-b">
+                <h2 className="text-xl font-semibold">Upcoming Economic Events</h2>
+            </div>
+            <div className="divide-y">
+                {events.map(event => (
+                    <div 
+                        key={event.id}
+                        className={`p-4 hover:bg-blue-50 cursor-pointer transition ${impactColorMap[event.impact]}`}
+                        onClick={() => onEventSelect(event)}
+                    >
+                        <div className="flex justify-between">
+                            <span className="font-medium">{event.title}</span>
+                            <span>{event.date}</span>
                         </div>
-                    ))
+                        <div className="text-sm text-gray-600">
+                            {event.country} | Impact: {event.impact.toUpperCase()}
+                        </div>
+                    </div>
                 ))}
             </div>
         </div>
@@ -177,24 +181,24 @@ export default function CorrelationHeatmap({ data }: CorrelationHeatmapProps) {
 }`
         }
     ],
-    "summary": "Advanced Market Correlation Matrix Dashboard providing comprehensive financial asset correlation analysis with interactive visualization, time-range selection, asset class filtering, and export capabilities. Utilizes sophisticated mathematical modeling and dynamic rendering for in-depth market relationship insights."
+    "summary": "Advanced Economic Calendar & Market Impact Analyzer providing real-time economic event tracking, predictive analysis, market sentiment insights, and dynamic trading strategy adjustments across multiple global markets."
 }
 
-Key Features:
-1. Dynamic Correlation Matrix Calculation
-2. Time Range Selector
-3. Asset Class Filtering
-4. Interactive Heatmap Visualization
-5. Statistical Significance Calculation
-6. Data Export Functionality
+Key Features of Economic Calendar & Impact Analyzer:
+1. Real-time economic events tracking
+2. Multi-market support (US, EU, Asia, Crypto)
+3. Event impact prediction
+4. Market sentiment analysis
+5. Dynamic trading strategy recommendations
+6. Interactive event selection
+7. Volatility and risk assessment
 
-Technologies Used:
+Technologies:
 - Next.js 14
 - TypeScript
-- TailwindCSS
-- D3.js (for color scaling)
-- MathJS (for correlation calculations)
+- Tailwind CSS
+- Axios for API interactions
 
-The implementation provides a comprehensive tool for financial analysts and traders to understand complex market relationships across different asset classes.
+The implementation provides a comprehensive tool for financial professionals to monitor, analyze, and respond to economic events with data-driven insights.
 
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to elaborate on any specific component or functionality?
