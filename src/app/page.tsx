@@ -1,198 +1,240 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  PortfolioSimulator, 
-  SimulationResult, 
-  AssetAllocation 
-} from '@/lib/portfolio-simulator';
+import React, { useState, useEffect } from 'react';
+import { OrderFlowAnalyzer } from '@/lib/order-flow-analyzer';
+import OrderFlowHeatMap from '@/components/OrderFlowHeatMap';
+import DeltaAnalysisChart from '@/components/DeltaAnalysisChart';
+import InstitutionalFlowIndicator from '@/components/InstitutionalFlowIndicator';
 
-export default function PortfolioSimulatorPage() {
-  const [assets, setAssets] = useState<AssetAllocation[]>([
-    { symbol: 'AAPL', weight: 30, expectedReturn: 0.12, volatility: 0.25 },
-    { symbol: 'GOOGL', weight: 25, expectedReturn: 0.10, volatility: 0.22 },
-    { symbol: 'MSFT', weight: 20, expectedReturn: 0.11, volatility: 0.20 },
-    { symbol: 'BOND', weight: 25, expectedReturn: 0.04, volatility: 0.08 }
-  ]);
+export default function MarketMakerDashboard() {
+  const [orderFlowData, setOrderFlowData] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
 
-  const [simulationResults, setSimulationResults] = useState<SimulationResult | null>(null);
-
-  const runSimulation = () => {
-    const simulator = new PortfolioSimulator(assets);
-    const results = simulator.runMonteCarloSimulation({
-      iterations: 10000,
-      timeHorizon: 5
-    });
-    setSimulationResults(results);
-  };
+  useEffect(() => {
+    const analyzer = new OrderFlowAnalyzer(selectedSymbol);
+    const data = analyzer.analyzeOrderFlow();
+    setOrderFlowData(data);
+  }, [selectedSymbol]);
 
   return (
-    <div className="container mx-auto p-6 bg-gray-100">
+    <div className="container mx-auto p-6 bg-gray-900 text-white">
       <h1 className="text-3xl font-bold mb-6 text-center">
-        Advanced Portfolio Scenario Simulator
+        Market Maker Order Flow Dashboard
       </h1>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-4">Asset Allocations</h2>
-          {assets.map((asset, index) => (
-            <div key={asset.symbol} className="mb-3">
-              <label className="flex justify-between">
-                <span>{asset.symbol}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={asset.weight}
-                  onChange={(e) => {
-                    const newAssets = [...assets];
-                    newAssets[index].weight = Number(e.target.value);
-                    setAssets(newAssets);
-                  }}
-                  className="w-1/2"
-                />
-                <span>{asset.weight}%</span>
-              </label>
-            </div>
-          ))}
-          <button 
-            onClick={runSimulation}
-            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Symbol Selector */}
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h2 className="text-xl font-semibold mb-4">Symbol</h2>
+          <select 
+            value={selectedSymbol}
+            onChange={(e) => setSelectedSymbol(e.target.value)}
+            className="w-full bg-gray-700 text-white p-2 rounded"
           >
-            Run Simulation
-          </button>
+            {['AAPL', 'GOOGL', 'MSFT', 'AMZN'].map(symbol => (
+              <option key={symbol} value={symbol}>{symbol}</option>
+            ))}
+          </select>
         </div>
 
-        {simulationResults && (
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Simulation Results</h2>
-            <div className="space-y-3">
-              <div>
-                <strong>Avg. Portfolio Return:</strong> 
-                {(simulationResults.averageReturn * 100).toFixed(2)}%
-              </div>
-              <div>
-                <strong>Portfolio Risk (Std Dev):</strong> 
-                {(simulationResults.standardDeviation * 100).toFixed(2)}%
-              </div>
-              <div>
-                <strong>Worst Case Scenario:</strong> 
-                {(simulationResults.worstCaseScenario * 100).toFixed(2)}%
-              </div>
-              <div>
-                <strong>Best Case Scenario:</strong> 
-                {(simulationResults.bestCaseScenario * 100).toFixed(2)}%
-              </div>
-              <div>
-                <strong>Probability of Positive Return:</strong> 
-                {(simulationResults.probabilityOfPositiveReturn * 100).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Delta Analysis */}
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h2 className="text-xl font-semibold mb-4">Order Flow Delta</h2>
+          <DeltaAnalysisChart data={orderFlowData?.deltaAnalysis} />
+        </div>
+
+        {/* Institutional Flow Indicator */}
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h2 className="text-xl font-semibold mb-4">Smart Money Flow</h2>
+          <InstitutionalFlowIndicator data={orderFlowData?.institutionalFlow} />
+        </div>
+      </div>
+
+      {/* Order Flow Heat Map */}
+      <div className="mt-6 bg-gray-800 p-4 rounded-lg">
+        <h2 className="text-xl font-semibold mb-4">Order Flow Heat Map</h2>
+        <OrderFlowHeatMap data={orderFlowData?.heatMapData} />
+      </div>
+
+      {/* Advanced Metrics */}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h3 className="font-semibold mb-2">Cumulative Volume Delta</h3>
+          <p>{orderFlowData?.cumulativeVolumeDelta}</p>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h3 className="font-semibold mb-2">Large Order Detection</h3>
+          <p>{orderFlowData?.largeOrderCount} significant orders</p>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h3 className="font-semibold mb-2">Smart Money Sentiment</h3>
+          <p>{orderFlowData?.smartMoneySentiment}</p>
+        </div>
       </div>
     </div>
   );
 }
-      `
-    },
+`},
     {
-      "path": "src/lib/portfolio-simulator.ts",
-      "content": `
-import * as math from 'mathjs';
+      "path": "src/lib/order-flow-analyzer.ts",
+      "content": `export class OrderFlowAnalyzer {
+  private symbol: string;
 
-export interface AssetAllocation {
-  symbol: string;
-  weight: number;
-  expectedReturn: number;
-  volatility: number;
-}
-
-interface SimulationConfig {
-  iterations: number;
-  timeHorizon: number;
-}
-
-export interface SimulationResult {
-  averageReturn: number;
-  standardDeviation: number;
-  worstCaseScenario: number;
-  bestCaseScenario: number;
-  probabilityOfPositiveReturn: number;
-}
-
-export class PortfolioSimulator {
-  private assets: AssetAllocation[];
-
-  constructor(assets: AssetAllocation[]) {
-    this.assets = assets;
+  constructor(symbol: string) {
+    this.symbol = symbol;
   }
 
-  private normalDistribution(): number {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-  }
-
-  runMonteCarloSimulation(config: SimulationConfig): SimulationResult {
-    const { iterations, timeHorizon } = config;
-    const portfolioReturns: number[] = [];
-
-    for (let i = 0; i < iterations; i++) {
-      let portfolioReturn = 1;
-
-      for (const asset of this.assets) {
-        const assetReturn = Math.pow(
-          1 + (asset.expectedReturn + 
-            asset.volatility * this.normalDistribution()),
-          timeHorizon
-        ) - 1;
-
-        portfolioReturn *= Math.pow(
-          1 + assetReturn, 
-          asset.weight / 100
-        );
-      }
-
-      portfolioReturns.push(portfolioReturn - 1);
-    }
-
+  analyzeOrderFlow() {
+    // Simulated order flow analysis
     return {
-      averageReturn: math.mean(portfolioReturns),
-      standardDeviation: math.std(portfolioReturns),
-      worstCaseScenario: math.min(portfolioReturns),
-      bestCaseScenario: math.max(portfolioReturns),
-      probabilityOfPositiveReturn: 
-        portfolioReturns.filter(r => r > 0).length / iterations
+      symbol: this.symbol,
+      deltaAnalysis: this.calculateDeltaAnalysis(),
+      institutionalFlow: this.trackInstitutionalFlow(),
+      heatMapData: this.generateHeatMapData(),
+      cumulativeVolumeDelta: this.calculateCumulativeVolumeDelta(),
+      largeOrderCount: this.detectLargeOrders(),
+      smartMoneySentiment: this.calculateSmartMoneySentiment()
     };
   }
+
+  private calculateDeltaAnalysis() {
+    // Simulate delta analysis calculation
+    return {
+      buyVolume: Math.random() * 1000000,
+      sellVolume: Math.random() * 1000000,
+      netDelta: Math.random() * 100
+    };
+  }
+
+  private trackInstitutionalFlow() {
+    // Simulate institutional flow tracking
+    return {
+      institutionalBuyVolume: Math.random() * 500000,
+      institutionalSellVolume: Math.random() * 500000,
+      netInstitutionalFlow: Math.random() * 50
+    };
+  }
+
+  private generateHeatMapData() {
+    // Generate simulated heat map data
+    return Array.from({length: 50}, () => ({
+      price: Math.random() * 100,
+      volume: Math.random() * 10000,
+      orderImbalance: Math.random()
+    }));
+  }
+
+  private calculateCumulativeVolumeDelta() {
+    // Simulate cumulative volume delta
+    return Math.random() * 1000000;
+  }
+
+  private detectLargeOrders() {
+    // Simulate large order detection
+    return Math.floor(Math.random() * 50);
+  }
+
+  private calculateSmartMoneySentiment() {
+    // Simulate smart money sentiment scoring
+    const sentiments = ['Bullish', 'Bearish', 'Neutral'];
+    return sentiments[Math.floor(Math.random() * sentiments.length)];
+  }
+}`},
+    {
+      "path": "src/components/DeltaAnalysisChart.tsx",
+      "content": `import React from 'react';
+
+interface DeltaAnalysisProps {
+  data?: {
+    buyVolume: number;
+    sellVolume: number;
+    netDelta: number;
+  };
 }
-      `
-    }
+
+const DeltaAnalysisChart: React.FC<DeltaAnalysisProps> = ({ data }) => {
+  if (!data) return <div>Loading...</div>;
+
+  return (
+    <div className="w-full h-48 flex items-center">
+      <div 
+        className="w-1/2 bg-green-500 h-16"
+        style={{width: `${Math.min(data.buyVolume / (data.buyVolume + data.sellVolume) * 100, 100)}%`}}
+      >
+        Buy: {data.buyVolume.toLocaleString()}
+      </div>
+      <div 
+        className="w-1/2 bg-red-500 h-16"
+        style={{width: `${Math.min(data.sellVolume / (data.buyVolume + data.sellVolume) * 100, 100)}%`}}
+      >
+        Sell: {data.sellVolume.toLocaleString()}
+      </div>
+    </div>
+  );
+};
+
+export default DeltaAnalysisChart;`},
+    {
+      "path": "src/components/InstitutionalFlowIndicator.tsx",
+      "content": `import React from 'react';
+
+interface InstitutionalFlowProps {
+  data?: {
+    institutionalBuyVolume: number;
+    institutionalSellVolume: number;
+    netInstitutionalFlow: number;
+  };
+}
+
+const InstitutionalFlowIndicator: React.FC<InstitutionalFlowProps> = ({ data }) => {
+  if (!data) return <div>Loading...</div>;
+
+  const flowDirection = data.netInstitutionalFlow > 0 ? 'Buying' : 'Selling';
+  
+  return (
+    <div className="text-center">
+      <div className={`text-2xl font-bold ${data.netInstitutionalFlow > 0 ? 'text-green-500' : 'text-red-500'}`}>
+        {flowDirection}
+      </div>
+      <div>
+        Buy Volume: {data.institutionalBuyVolume.toLocaleString()}
+      </div>
+      <div>
+        Sell Volume: {data.institutionalSellVolume.toLocaleString()}
+      </div>
+      <div>
+        Net Flow: {data.netInstitutionalFlow.toLocaleString()}
+      </div>
+    </div>
+  );
+};
+
+export default InstitutionalFlowIndicator;`}
   ],
-  "summary": "Advanced Portfolio Scenario Simulator leveraging Monte Carlo simulation techniques to model portfolio performance across different asset allocations, providing comprehensive risk and return analysis with an interactive web interface."
+  "summary": "Advanced Market Maker Order Flow Dashboard providing real-time institutional order flow analysis, liquidity tracking, and market microstructure visualization with interactive components and simulated data analysis."
 }
 
 Key Features:
-- Interactive Asset Allocation Slider
-- Monte Carlo Simulation Engine
-- Comprehensive Performance Metrics
-- Dynamic Risk Analysis
-- Responsive Design with TailwindCSS
+- Real-time Order Flow Analysis
+- Delta Volume Visualization
+- Institutional Flow Tracking
+- Smart Money Sentiment Scoring
+- Interactive Symbol Selection
+- Dark Mode Design
+- Simulated Data Generation
 
 Technologies:
 - Next.js 14
 - TypeScript
 - TailwindCSS
-- Math.js for statistical calculations
 
-The implementation provides a user-friendly interface for simulating portfolio scenarios with real-time risk and return visualization.
+The implementation provides a comprehensive dashboard for analyzing market maker order flow, with simulated data to demonstrate the concept. Each component is designed to provide insights into market dynamics, institutional trading patterns, and order flow characteristics.
 
 Recommended Enhancements:
-- Add more advanced correlation modeling
-- Implement machine learning-based return prediction
-- Create visualization of simulation results
-- Add more granular risk metrics
+- Integrate real-time market data API
+- Implement WebSocket for live updates
+- Add more advanced statistical analysis
+- Create more detailed visualizations
+- Implement machine learning sentiment prediction
 
-Would you like me to elaborate on any specific aspect of the portfolio simulator?
+Would you like me to elaborate on any specific aspect of the Market Maker Order Flow Dashboard?
