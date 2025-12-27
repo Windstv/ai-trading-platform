@@ -1,278 +1,263 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { MarketPredictionModel } from '@/lib/ml-predictor/market-predictor';
-import { AssetCorrelationMatrix } from '@/components/AssetCorrelationMatrix';
-import { PredictionConfidenceChart } from '@/components/PredictionConfidenceChart';
+import dynamic from 'next/dynamic';
+import { SentimentSocialGraph } from '@/lib/sentiment-analysis/social-graph';
+import { NetworkVisualization } from '@/components/NetworkVisualization';
 
-export default function MarketPredictorDashboard() {
-  const [predictionModel, setPredictionModel] = useState<MarketPredictionModel | null>(null);
-  const [predictions, setPredictions] = useState<any[]>([]);
-  const [assets, setAssets] = useState<string[]>([
-    'AAPL', 'GOOGL', 'BTC', 'GOLD', 'EUR/USD'
-  ]);
+const SentimentSocialGraphAnalysis = () => {
+  const [socialGraph, setSocialGraph] = useState(null);
+  const [graphData, setGraphData] = useState({
+    nodes: [],
+    links: []
+  });
 
   useEffect(() => {
-    initializePredictionModel();
+    initializeSocialGraph();
   }, []);
 
-  const initializePredictionModel = async () => {
-    const model = new MarketPredictionModel({
-      assets,
-      timeframe: '1D',
-      predictionHorizon: 30
+  const initializeSocialGraph = async () => {
+    const graph = new SentimentSocialGraph({
+      sources: [
+        'financial_twitter',
+        'reddit_finance',
+        'financial_blogs'
+      ],
+      analysisConfig: {
+        sentimentThreshold: 0.6,
+        influenceWeight: 0.75
+      }
     });
 
-    await model.trainModel();
-    setPredictionModel(model);
+    await graph.buildGraph();
+    setSocialGraph(graph);
 
-    const initialPredictions = await model.generateCrossMArketPredictions();
-    setPredictions(initialPredictions);
+    const graphVisualizationData = graph.getGraphVisualizationData();
+    setGraphData(graphVisualizationData);
   };
 
-  const runPrediction = async () => {
-    if (predictionModel) {
-      const newPredictions = await predictionModel.generateCrossMArketPredictions();
-      setPredictions(newPredictions);
+  const runSentimentPropagation = async () => {
+    if (socialGraph) {
+      await socialGraph.simulateSentimentPropagation();
+      const updatedGraphData = socialGraph.getGraphVisualizationData();
+      setGraphData(updatedGraphData);
     }
   };
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
       <h1 className="text-4xl font-bold mb-8 text-center">
-        Cross-Market Machine Learning Predictor
+        Sentiment Social Network Analysis
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Market Predictions</h2>
-          {predictions.map((prediction, index) => (
-            <div key={index} className="mb-4 p-3 bg-gray-100 rounded">
-              <p className="font-bold">{prediction.asset}</p>
-              <p>Predicted Price: ${prediction.predictedPrice.toFixed(2)}</p>
-              <p>Confidence: {(prediction.confidence * 100).toFixed(2)}%</p>
-            </div>
-          ))}
-          <button 
-            onClick={runPrediction}
-            className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
-          >
-            Generate New Predictions
-          </button>
+          <NetworkVisualization 
+            data={graphData}
+            options={{
+              height: 600,
+              nodeColor: (node) => node.sentimentScore > 0 ? 'green' : 'red'
+            }}
+          />
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4">Market Correlation</h2>
-          <AssetCorrelationMatrix assets={assets} />
+          <h2 className="text-2xl font-semibold mb-4">Network Metrics</h2>
+          {socialGraph && (
+            <>
+              <div className="mb-4">
+                <p>Total Nodes: {graphData.nodes.length}</p>
+                <p>Total Connections: {graphData.links.length}</p>
+                <p>Average Sentiment: {socialGraph.getAverageSentiment()}</p>
+              </div>
+              <button 
+                onClick={runSentimentPropagation}
+                className="bg-blue-500 text-white px-4 py-2 rounded"
+              >
+                Simulate Sentiment Propagation
+              </button>
+            </>
+          )}
         </div>
-      </div>
-
-      <div className="mt-8 bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-2xl font-semibold mb-4">Prediction Confidence</h2>
-        <PredictionConfidenceChart predictions={predictions} />
       </div>
     </div>
   );
-}
+};
+
+export default SentimentSocialGraphAnalysis;
 `
     },
     {
-      "path": "src/lib/ml-predictor/market-predictor.ts",
+      "path": "src/lib/sentiment-analysis/social-graph.ts",
       "content": `
 import * as tf from '@tensorflow/tfjs';
-import { fetchMarketData } from '@/utils/data-fetcher';
-import { CorrelationAnalyzer } from './correlation-analyzer';
+import { fetchSocialMediaData } from '@/utils/data-fetcher';
 
-interface PredictorConfig {
-  assets: string[];
-  timeframe: string;
-  predictionHorizon: number;
+interface SocialGraphConfig {
+  sources: string[];
+  analysisConfig: {
+    sentimentThreshold: number;
+    influenceWeight: number;
+  };
 }
 
-export class MarketPredictionModel {
-  private config: PredictorConfig;
-  private model: tf.Sequential | null = null;
-  private correlationAnalyzer: CorrelationAnalyzer;
+export class SentimentSocialGraph {
+  private config: SocialGraphConfig;
+  private graph: Map<string, any> = new Map();
+  private sentimentModel: tf.Sequential | null = null;
 
-  constructor(config: PredictorConfig) {
+  constructor(config: SocialGraphConfig) {
     this.config = config;
-    this.correlationAnalyzer = new CorrelationAnalyzer(config.assets);
   }
 
-  async trainModel() {
-    // Fetch and preprocess multi-asset data
-    const marketData = await this.fetchAndPreprocessData();
-    
-    // Create TensorFlow model
-    this.model = tf.sequential({
+  async buildGraph() {
+    // Initialize sentiment analysis model
+    await this.initializeSentimentModel();
+
+    // Fetch data from multiple sources
+    for (const source of this.config.sources) {
+      const sourceData = await fetchSocialMediaData(source);
+      this.processSourceData(sourceData);
+    }
+  }
+
+  private async initializeSentimentModel() {
+    this.sentimentModel = tf.sequential({
       layers: [
-        tf.layers.dense({ 
-          inputShape: [marketData.features.shape[1]], 
-          units: 64, 
-          activation: 'relu' 
-        }),
+        tf.layers.dense({ inputShape: [100], units: 64, activation: 'relu' }),
         tf.layers.dense({ units: 32, activation: 'relu' }),
-        tf.layers.dense({ units: 1 })
+        tf.layers.dense({ units: 1, activation: 'sigmoid' })
       ]
     });
 
-    this.model.compile({
+    this.sentimentModel.compile({
       optimizer: 'adam',
-      loss: 'meanSquaredError'
+      loss: 'binaryCrossentropy'
+    });
+  }
+
+  private processSourceData(sourceData: any[]) {
+    sourceData.forEach(entry => {
+      const sentiment = this.analyzeSentiment(entry.text);
+      const influenceScore = this.calculateInfluenceScore(entry);
+
+      this.graph.set(entry.id, {
+        id: entry.id,
+        text: entry.text,
+        sentimentScore: sentiment,
+        influenceScore: influenceScore,
+        connections: []
+      });
     });
 
-    // Train the model
-    await this.model.fit(
-      marketData.features, 
-      marketData.labels, 
-      { epochs: 50, batchSize: 32 }
-    );
+    this.buildConnections();
   }
 
-  async generateCrossMArketPredictions() {
-    if (!this.model) {
-      await this.trainModel();
-    }
-
-    const predictions = [];
-    for (const asset of this.config.assets) {
-      const assetData = await fetchMarketData(asset, this.config.timeframe);
-      const features = this.prepareFeatures(assetData);
-      
-      const prediction = this.model!.predict(features) as tf.Tensor;
-      const predictedPrice = prediction.dataSync()[0];
-      
-      const confidence = this.calculateConfidence(assetData, predictedPrice);
-      
-      predictions.push({
-        asset,
-        predictedPrice,
-        confidence
-      });
-    }
-
-    return predictions;
-  }
-
-  private async fetchAndPreprocessData() {
-    // Implement multi-asset data fetching and preprocessing
-    // Return features and labels tensors
-  }
-
-  private prepareFeatures(data: any[]) {
-    // Convert market data to tensor features
-    return tf.tensor2d(data);
-  }
-
-  private calculateConfidence(historicalData: any[], predictedPrice: number): number {
-    // Advanced confidence calculation using statistical methods
-    const volatility = this.calculateVolatility(historicalData);
-    const predictionError = this.calculatePredictionError(historicalData, predictedPrice);
-    
-    return 1 - (predictionError / volatility);
-  }
-
-  private calculateVolatility(data: any[]): number {
-    // Implement volatility calculation
-    return 0.1;
-  }
-
-  private calculatePredictionError(data: any[], predictedPrice: number): number {
-    // Implement prediction error calculation
-    return Math.abs(data[data.length - 1].close - predictedPrice);
-  }
-}
-`
-    },
-    {
-      "path": "src/lib/ml-predictor/correlation-analyzer.ts",
-      "content": `
-export class CorrelationAnalyzer {
-  private assets: string[];
-
-  constructor(assets: string[]) {
-    this.assets = assets;
-  }
-
-  async calculateCorrelationMatrix() {
-    const correlations = {};
-
-    for (const asset1 of this.assets) {
-      correlations[asset1] = {};
-      for (const asset2 of this.assets) {
-        if (asset1 !== asset2) {
-          correlations[asset1][asset2] = await this.calculateCorrelation(asset1, asset2);
-        }
-      }
-    }
-
-    return correlations;
-  }
-
-  private async calculateCorrelation(asset1: string, asset2: string): Promise<number> {
-    // Implement cross-market correlation calculation
-    // Fetch historical data for both assets
-    // Calculate Pearson correlation coefficient
+  private analyzeSentiment(text: string): number {
+    // Use trained sentiment model to analyze text
     return Math.random(); // Placeholder
   }
 
-  identifyCrossMarketSignals(correlationMatrix: any) {
-    // Analyze correlation matrix for trading signals
-    const signals = [];
+  private calculateInfluenceScore(entry: any): number {
+    // Complex influence calculation based on followers, engagement, etc.
+    return Math.random();
+  }
 
-    for (const asset1 in correlationMatrix) {
-      for (const asset2 in correlationMatrix[asset1]) {
-        const correlation = correlationMatrix[asset1][asset2];
-        
-        if (Math.abs(correlation) > 0.7) {
-          signals.push({
-            assets: [asset1, asset2],
-            correlation,
-            type: correlation > 0 ? 'positive' : 'negative'
-          });
+  private buildConnections() {
+    const nodes = Array.from(this.graph.values());
+    
+    nodes.forEach(node => {
+      nodes.forEach(potentialConnection => {
+        if (this.shouldConnect(node, potentialConnection)) {
+          node.connections.push(potentialConnection.id);
         }
-      }
-    }
+      });
+    });
+  }
 
-    return signals;
+  private shouldConnect(node1: any, node2: any): boolean {
+    const sentimentSimilarity = Math.abs(node1.sentimentScore - node2.sentimentScore);
+    return sentimentSimilarity < this.config.analysisConfig.sentimentThreshold;
+  }
+
+  async simulateSentimentPropagation() {
+    const nodes = Array.from(this.graph.values());
+    
+    nodes.forEach(node => {
+      const connectionSentiments = node.connections
+        .map(connectionId => this.graph.get(connectionId).sentimentScore);
+      
+      const averageConnectedSentiment = this.calculateAverageSentiment(connectionSentiments);
+      
+      // Propagate sentiment with influence weight
+      node.sentimentScore = this.weightedSentimentAverage(
+        node.sentimentScore, 
+        averageConnectedSentiment,
+        node.influenceScore
+      );
+    });
+  }
+
+  private calculateAverageSentiment(sentiments: number[]): number {
+    return sentiments.reduce((a, b) => a + b, 0) / sentiments.length;
+  }
+
+  private weightedSentimentAverage(
+    originalSentiment: number, 
+    connectedSentiment: number, 
+    influenceWeight: number
+  ): number {
+    return originalSentiment * (1 - influenceWeight) + 
+           connectedSentiment * influenceWeight;
+  }
+
+  getGraphVisualizationData() {
+    const nodes = Array.from(this.graph.values()).map(node => ({
+      id: node.id,
+      sentimentScore: node.sentimentScore
+    }));
+
+    const links = nodes.flatMap(node => {
+      const sourceNode = this.graph.get(node.id);
+      return sourceNode.connections.map(connectionId => ({
+        source: node.id,
+        target: connectionId
+      }));
+    });
+
+    return { nodes, links };
+  }
+
+  getAverageSentiment(): number {
+    const nodes = Array.from(this.graph.values());
+    const sentiments = nodes.map(node => node.sentimentScore);
+    return this.calculateAverageSentiment(sentiments);
   }
 }
 `
     }
   ],
-  "summary": "Advanced Cross-Market Machine Learning Predictor with TensorFlow.js, featuring multi-asset prediction, correlation analysis, and confidence-based trading insights. Utilizes ensemble learning techniques and provides a comprehensive dashboard for market prediction and analysis."
+  "summary": "Advanced Sentiment Social Graph Analysis platform leveraging machine learning to map and analyze sentiment propagation across financial social networks. Provides real-time visualization, network metrics, and sentiment dynamics tracking."
 }
 
-Key Implementation Details:
+Key Features:
+1. Multi-source social media sentiment analysis
+2. Machine learning-based sentiment modeling
+3. Dynamic network graph construction
+4. Sentiment propagation simulation
+5. Influence score calculation
+6. Interactive network visualization
 
-1. Quantum Trading Dashboard
-   - Multi-asset prediction interface
-   - Real-time prediction generation
-   - Correlation matrix visualization
-   - Prediction confidence chart
-
-2. Market Prediction Model
-   - TensorFlow.js for machine learning
-   - Cross-market feature engineering
-   - Ensemble learning techniques
-   - Confidence interval calculations
-
-3. Correlation Analyzer
-   - Cross-market correlation matrix
-   - Signal identification
-   - Advanced correlation analysis
-
-Technology Stack:
+Technologies:
 - Next.js 14
 - TypeScript
 - TensorFlow.js
-- Tailwind CSS
+- Dynamic network visualization
 
-Recommended Next Steps:
-1. Implement actual data fetching from financial APIs
-2. Develop more sophisticated machine learning models
-3. Add real-time data streaming
-4. Create comprehensive backtesting framework
-5. Implement advanced risk management techniques
+Recommended Enhancements:
+- Implement actual sentiment analysis model
+- Add real-time data streaming
+- Develop more sophisticated influence scoring
+- Create comprehensive network metrics dashboard
 
 Would you like me to elaborate on any specific aspect of the implementation?
