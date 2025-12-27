@@ -1,128 +1,219 @@
-'use client';
-import React, { useState } from 'react';
-import { TraderResearchPlatform } from '@/components/TraderResearchPlatform';
-import { ConnectWalletButton } from '@/components/blockchain/ConnectWalletButton';
+import * as math from 'mathjs';
+import { MonteCarlo } from './MonteCarlo';
+import { RiskMetrics } from './RiskMetrics';
 
-export default function Home() {
-    const [isConnected, setIsConnected] = useState(false);
-
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-900 to-indigo-900 text-white">
-            <header className="flex justify-between p-6">
-                <h1 className="text-3xl font-bold">Decentralized Trading Research</h1>
-                <ConnectWalletButton 
-                    onConnect={() => setIsConnected(true)} 
-                />
-            </header>
-
-            {isConnected ? (
-                <TraderResearchPlatform />
-            ) : (
-                <div className="text-center mt-24">
-                    <h2 className="text-2xl mb-4">
-                        Connect Wallet to Access Research Platform
-                    </h2>
-                </div>
-            )}
-        </div>
-    );
+interface SimulationConfig {
+    assets: string[];
+    initialCapital: number;
+    correlationMatrix: number[][];
+    volatilities: number[];
+    returns: number[];
 }
-`
-        },
-        {
-            "path": "src/components/TraderResearchPlatform.tsx",
-            "content": `
-import React, { useState } from 'react';
-import { StrategyMarketplace } from './StrategyMarketplace';
-import { ResearchPublications } from './ResearchPublications';
-import { TraderProfile } from './TraderProfile';
 
-export function TraderResearchPlatform() {
-    const [activeSection, setActiveSection] = useState('strategies');
+export class RiskSimulationEngine {
+    private config: SimulationConfig;
+    private monteCarlo: MonteCarlo;
+    private riskMetrics: RiskMetrics;
 
-    const renderSection = () => {
-        switch(activeSection) {
-            case 'strategies':
-                return <StrategyMarketplace />;
-            case 'research':
-                return <ResearchPublications />;
-            case 'profile':
-                return <TraderProfile />;
-        }
+    constructor(config: SimulationConfig) {
+        this.config = config;
+        this.monteCarlo = new MonteCarlo(config);
+        this.riskMetrics = new RiskMetrics();
     }
 
-    return (
-        <div className="container mx-auto p-6">
-            <nav className="mb-8 flex space-x-4">
-                <button 
-                    onClick={() => setActiveSection('strategies')}
-                    className={`px-4 py-2 ${activeSection === 'strategies' ? 'bg-blue-600' : 'bg-gray-800'}`}
-                >
-                    Strategy Marketplace
-                </button>
-                <button 
-                    onClick={() => setActiveSection('research')}
-                    className={`px-4 py-2 ${activeSection === 'research' ? 'bg-blue-600' : 'bg-gray-800'}`}
-                >
-                    Research Publications
-                </button>
-                <button 
-                    onClick={() => setActiveSection('profile')}
-                    className={`px-4 py-2 ${activeSection === 'profile' ? 'bg-blue-600' : 'bg-gray-800'}`}
-                >
-                    Trader Profile
-                </button>
-            </nav>
+    // Stochastic Volatility Simulation
+    simulateStochasticVolatility(paths: number = 10000): number[][] {
+        return this.monteCarlo.generateVolatilityPaths(paths);
+    }
 
-            {renderSection()}
-        </div>
-    );
+    // Value at Risk (VaR) Calculation
+    calculateVaR(confidenceLevel: number = 0.95): number {
+        const simulatedReturns = this.monteCarlo.generateReturns();
+        return this.riskMetrics.parametricVaR(simulatedReturns, confidenceLevel);
+    }
+
+    // Scenario Stress Testing
+    runStressScenarios(): Record<string, number> {
+        const scenarios = {
+            marketCrash: -0.3,
+            blackSwan: -0.5,
+            normalMarket: -0.1
+        };
+
+        return Object.fromEntries(
+            Object.entries(scenarios).map(([name, severity]) => [
+                name, 
+                this.riskMetrics.stressTest(this.config.initialCapital, severity)
+            ])
+        );
+    }
+
+    // Correlation Matrix Analysis
+    analyzeCorrelations(): number[][] {
+        return this.riskMetrics.computeCorrelationMatrix(this.config.correlationMatrix);
+    }
+
+    // Probability Distribution of Returns
+    calculateReturnDistribution(): {
+        mean: number,
+        median: number,
+        std: number,
+        distribution: number[]
+    } {
+        const returns = this.monteCarlo.generateReturns();
+        return {
+            mean: math.mean(returns),
+            median: math.median(returns),
+            std: math.std(returns),
+            distribution: returns
+        };
+    }
+
+    // Max Drawdown Projection
+    calculateMaxDrawdown(): number {
+        const simulatedPaths = this.monteCarlo.generatePricePaths();
+        return this.riskMetrics.computeMaxDrawdown(simulatedPaths);
+    }
+
+    // Risk Factor Decomposition
+    decompositionRiskFactors(): Record<string, number> {
+        return this.riskMetrics.riskFactorDecomposition(
+            this.config.assets, 
+            this.config.returns
+        );
+    }
+
+    // Export Simulation Results
+    exportSimulationResults(): Record<string, any> {
+        return {
+            volatilitySim: this.simulateStochasticVolatility(),
+            var: this.calculateVaR(),
+            stressTest: this.runStressScenarios(),
+            correlations: this.analyzeCorrelations(),
+            returnDistribution: this.calculateReturnDistribution(),
+            maxDrawdown: this.calculateMaxDrawdown(),
+            riskFactors: this.decompositionRiskFactors()
+        };
+    }
 }
 `
         },
         {
-            "path": "src/components/StrategyMarketplace.tsx",
+            "path": "src/lib/riskSimulation/MonteCarlo.ts",
             "content": `
-import React, { useState } from 'react';
-import { tradeStrategies } from '@/lib/mockData';
+import * as math from 'mathjs';
 
-export function StrategyMarketplace() {
-    const [strategies, setStrategies] = useState(tradeStrategies);
+interface MonteCarloConfig {
+    assets: string[];
+    initialCapital: number;
+    correlationMatrix: number[][];
+    volatilities: number[];
+    returns: number[];
+}
 
-    return (
-        <div>
-            <h2 className="text-2xl mb-6">Strategy Marketplace</h2>
-            <div className="grid grid-cols-3 gap-6">
-                {strategies.map(strategy => (
-                    <div 
-                        key={strategy.id} 
-                        className="bg-gray-800 p-6 rounded-lg"
-                    >
-                        <h3 className="text-xl font-bold mb-2">{strategy.name}</h3>
-                        <p className="text-gray-300">{strategy.description}</p>
-                        <div className="mt-4 flex justify-between">
-                            <span>Performance: {strategy.performance}%</span>
-                            <button className="bg-blue-600 px-3 py-1 rounded">
-                                View Details
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
+export class MonteCarlo {
+    private config: MonteCarloConfig;
+
+    constructor(config: MonteCarloConfig) {
+        this.config = config;
+    }
+
+    generateVolatilityPaths(paths: number = 10000): number[][] {
+        return Array.from({ length: paths }, () => 
+            this.config.volatilities.map(vol => 
+                vol * Math.sqrt(Math.random())
+            )
+        );
+    }
+
+    generateReturns(simulations: number = 10000): number[] {
+        return Array.from({ length: simulations }, () => 
+            math.mean(this.config.returns) + 
+            math.std(this.config.returns) * math.randomNormal(0, 1)
+        );
+    }
+
+    generatePricePaths(
+        timeHorizon: number = 252, 
+        initialPrice: number = this.config.initialCapital
+    ): number[][] {
+        return this.config.assets.map(asset => {
+            const returns = this.generateReturns();
+            return returns.map((ret, idx) => 
+                initialPrice * Math.pow(1 + ret, idx / timeHorizon)
+            );
+        });
+    }
+}
+`
+        },
+        {
+            "path": "src/lib/riskSimulation/RiskMetrics.ts",
+            "content": `
+import * as math from 'mathjs';
+
+export class RiskMetrics {
+    parametricVaR(returns: number[], confidenceLevel: number = 0.95): number {
+        const mean = math.mean(returns);
+        const std = math.std(returns);
+        const zScore = math.quantileNormal(confidenceLevel);
+        return mean + (zScore * std);
+    }
+
+    stressTest(capital: number, severity: number): number {
+        return capital * (1 + severity);
+    }
+
+    computeCorrelationMatrix(matrix: number[][]): number[][] {
+        return math.correlationMatrix(matrix);
+    }
+
+    computeMaxDrawdown(paths: number[][]): number {
+        return Math.max(...paths.map(path => {
+            let peak = path[0];
+            return Math.max(...path.map(price => {
+                peak = Math.max(peak, price);
+                return (peak - price) / peak;
+            }));
+        }));
+    }
+
+    riskFactorDecomposition(
+        assets: string[], 
+        returns: number[]
+    ): Record<string, number> {
+        return Object.fromEntries(
+            assets.map((asset, idx) => [
+                asset, 
+                math.mean(returns.slice(0, idx + 1))
+            ])
+        );
+    }
 }
 `
         }
     ],
-    "summary": "A decentralized trading research platform that enables traders to share, discover, and validate trading strategies through a blockchain-powered, community-driven ecosystem with strategy marketplace, research publications, and verified trader profiles."
+    "summary": "An advanced TypeScript-based Monte Carlo risk simulation engine that provides comprehensive financial risk analysis, including stochastic volatility modeling, VaR calculations, stress testing, and risk factor decomposition."
 }
 
-Key Implementation Details:
-- Wallet-connected access
-- Modular platform sections
-- Strategy marketplace
-- Responsive design
-- Blockchain integration hooks
+This implementation offers:
 
-Would you like me to expand on any specific component or add more advanced features?
+1. Comprehensive risk simulation capabilities
+2. Modular design with separate modules for Monte Carlo simulation, risk metrics
+3. Advanced statistical calculations using `mathjs`
+4. Flexible configuration options
+5. Multiple risk analysis methods
+6. Detailed result exports
+
+Key Features:
+- Stochastic volatility modeling
+- Value at Risk (VaR) calculation
+- Scenario stress testing
+- Correlation matrix analysis
+- Return distribution analysis
+- Max drawdown projection
+- Risk factor decomposition
+
+The code provides a robust framework for quantitative risk analysis in financial modeling.
+
+Would you like me to elaborate on any specific aspect of the risk simulation module?
