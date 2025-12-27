@@ -1,207 +1,161 @@
-import { v4 as uuidv4 } from 'uuid';
+'use client';
 
-enum OrderType {
-  MARKET = 'MARKET',
-  LIMIT = 'LIMIT',
-  STOP_LOSS = 'STOP_LOSS',
-  TAKE_PROFIT = 'TAKE_PROFIT',
-  TRAILING_STOP = 'TRAILING_STOP',
-  OCO = 'OCO',
-  CONDITIONAL = 'CONDITIONAL'
-}
+import React, { useState } from 'react';
+import { TraderProfile } from '@/components/TraderProfile';
+import { TradingLeaderboard } from '@/components/TradingLeaderboard';
+import { SocialTradingFeed } from '@/components/SocialTradingFeed';
+import { TradeSignalDiscovery } from '@/components/TradeSignalDiscovery';
 
-enum OrderStatus {
-  PENDING = 'PENDING',
-  ACTIVE = 'ACTIVE',
-  EXECUTED = 'EXECUTED',
-  CANCELLED = 'CANCELLED'
-}
-
-interface BaseOrder {
+export interface Trader {
   id: string;
-  symbol: string;
-  quantity: number;
-  type: OrderType;
-  status: OrderStatus;
+  username: string;
+  profileImage: string;
+  performanceScore: number;
+  totalTrades: number;
+  profitPercentage: number;
+  riskScore: number;
+}
+
+export interface TradeSignal {
+  id: string;
+  trader: Trader;
+  asset: string;
+  type: 'BUY' | 'SELL';
+  confidence: number;
   timestamp: number;
 }
 
-interface TrailingStopOrder extends BaseOrder {
-  trailAmount: number;
-  trailPercent: number;
-  triggerPrice: number;
+export default function TradingSocialNetworkPage() {
+  const [selectedTrader, setSelectedTrader] = useState<Trader | null>(null);
+  const [tradeSignals, setTradeSignals] = useState<TradeSignal[]>([]);
+
+  const mockTraders: Trader[] = [
+    {
+      id: '1',
+      username: 'CryptoKing',
+      profileImage: '/profile1.jpg',
+      performanceScore: 85,
+      totalTrades: 250,
+      profitPercentage: 22.5,
+      riskScore: 7
+    },
+    // Add more mock traders...
+  ];
+
+  const handleTraderSelect = (trader: Trader) => {
+    setSelectedTrader(trader);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-6">
+      <div className="container mx-auto grid grid-cols-12 gap-6">
+        <div className="col-span-3">
+          <TraderProfile 
+            trader={selectedTrader} 
+            onTraderSelect={handleTraderSelect} 
+            traders={mockTraders}
+          />
+        </div>
+        
+        <div className="col-span-6">
+          <SocialTradingFeed 
+            tradeSignals={tradeSignals} 
+            onSignalUpdate={setTradeSignals}
+          />
+        </div>
+        
+        <div className="col-span-3">
+          <TradingLeaderboard traders={mockTraders} />
+          <TradeSignalDiscovery 
+            traders={mockTraders}
+            onSignalGenerate={(signal) => setTradeSignals([...tradeSignals, signal])}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+      `
+    },
+    {
+      "path": "src/components/TraderProfile.tsx",
+      "content": `
+import React from 'react';
+import { Trader } from '@/app/page';
+
+interface TraderProfileProps {
+  trader: Trader | null;
+  traders: Trader[];
+  onTraderSelect: (trader: Trader) => void;
 }
 
-interface OCOOrder extends BaseOrder {
-  stopLossPrice: number;
-  takeProfitPrice: number;
-  primaryOrderId: string;
-  secondaryOrderId: string;
+export function TraderProfile({ trader, traders, onTraderSelect }: TraderProfileProps) {
+  return (
+    <div className="bg-white shadow-md rounded-lg p-4">
+      {trader ? (
+        <div>
+          <img 
+            src={trader.profileImage} 
+            alt={trader.username} 
+            className="w-24 h-24 rounded-full mx-auto"
+          />
+          <h2 className="text-center text-xl font-bold mt-4">{trader.username}</h2>
+          <div className="mt-4">
+            <p>Performance Score: {trader.performanceScore}</p>
+            <p>Total Trades: {trader.totalTrades}</p>
+            <p>Profit: {trader.profitPercentage}%</p>
+            <p>Risk Score: {trader.riskScore}/10</p>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <h2 className="text-center text-xl font-bold mb-4">Select a Trader</h2>
+          {traders.map(t => (
+            <div 
+              key={t.id} 
+              onClick={() => onTraderSelect(t)}
+              className="cursor-pointer hover:bg-gray-100 p-2 rounded"
+            >
+              {t.username}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
-
-interface ConditionalOrder extends BaseOrder {
-  condition: string;
-  triggerPrice: number;
-  conditionFunction: (currentPrice: number) => boolean;
-}
-
-class AdvancedOrderManager {
-  private orders: Map<string, BaseOrder> = new Map();
-
-  createTrailingStopOrder(
-    symbol: string, 
-    quantity: number, 
-    trailAmount?: number, 
-    trailPercent?: number
-  ): TrailingStopOrder {
-    const order: TrailingStopOrder = {
-      id: uuidv4(),
-      symbol,
-      quantity,
-      type: OrderType.TRAILING_STOP,
-      status: OrderStatus.PENDING,
-      timestamp: Date.now(),
-      trailAmount: trailAmount || 0,
-      trailPercent: trailPercent || 0,
-      triggerPrice: 0
-    };
-
-    this.orders.set(order.id, order);
-    return order;
-  }
-
-  createOCOOrder(
-    symbol: string, 
-    quantity: number, 
-    stopLossPrice: number, 
-    takeProfitPrice: number
-  ): OCOOrder {
-    const primaryOrder: BaseOrder = {
-      id: uuidv4(),
-      symbol,
-      quantity,
-      type: OrderType.OCO,
-      status: OrderStatus.PENDING,
-      timestamp: Date.now()
-    };
-
-    const secondaryOrder: BaseOrder = {
-      id: uuidv4(),
-      symbol,
-      quantity,
-      type: OrderType.OCO,
-      status: OrderStatus.PENDING,
-      timestamp: Date.now()
-    };
-
-    const ocoOrder: OCOOrder = {
-      ...primaryOrder,
-      stopLossPrice,
-      takeProfitPrice,
-      primaryOrderId: primaryOrder.id,
-      secondaryOrderId: secondaryOrder.id
-    };
-
-    this.orders.set(ocoOrder.id, ocoOrder);
-    return ocoOrder;
-  }
-
-  createConditionalOrder(
-    symbol: string, 
-    quantity: number, 
-    condition: string,
-    triggerPrice: number
-  ): ConditionalOrder {
-    const conditionFunction = new Function(
-      'currentPrice', 
-      `return ${condition}`
-    ) as (currentPrice: number) => boolean;
-
-    const order: ConditionalOrder = {
-      id: uuidv4(),
-      symbol,
-      quantity,
-      type: OrderType.CONDITIONAL,
-      status: OrderStatus.PENDING,
-      timestamp: Date.now(),
-      condition,
-      triggerPrice,
-      conditionFunction
-    };
-
-    this.orders.set(order.id, order);
-    return order;
-  }
-
-  executeConditionalOrder(orderId: string, currentPrice: number): boolean {
-    const order = this.orders.get(orderId) as ConditionalOrder;
-    
-    if (!order || order.status !== OrderStatus.PENDING) {
-      return false;
+      `
     }
-
-    if (order.conditionFunction(currentPrice)) {
-      order.status = OrderStatus.EXECUTED;
-      return true;
-    }
-
-    return false;
-  }
-
-  analyzeOrderExecutionMetrics(): OrderExecutionAnalytics {
-    const allOrders = Array.from(this.orders.values());
-    
-    return {
-      totalOrders: allOrders.length,
-      executedOrders: allOrders.filter(o => o.status === OrderStatus.EXECUTED).length,
-      pendingOrders: allOrders.filter(o => o.status === OrderStatus.PENDING).length,
-      cancelledOrders: allOrders.filter(o => o.status === OrderStatus.CANCELLED).length
-    };
-  }
+  ],
+  "summary": "A cross-platform social trading network that allows users to discover, follow, and learn from top-performing traders. Features include trader profiles, performance leaderboards, social trading feeds, and trade signal discovery with responsive design and interactive components."
 }
-
-interface OrderExecutionAnalytics {
-  totalOrders: number;
-  executedOrders: number;
-  pendingOrders: number;
-  cancelledOrders: number;
-}
-
-export {
-  AdvancedOrderManager,
-  OrderType,
-  OrderStatus
-};
 
 This implementation provides:
 
-1. Advanced Order Types
-   - Trailing Stop Orders
-   - OCO (One Cancels Other) Orders
-   - Conditional Market/Limit Orders
+1. Main Features
+- Trader profile management
+- Performance leaderboards
+- Social trading feed
+- Trade signal discovery
 
-2. Key Features
-   - Unique Order ID generation
-   - Flexible order creation
-   - Conditional order execution
-   - Order status tracking
-   - Execution analytics
-
-3. Advanced Capabilities
-   - Dynamic condition evaluation
-   - Metrics and analytics
-   - Typescript strong typing
-
-Technologies:
+2. Technical Stack
+- Next.js 14
 - TypeScript
-- UUID for unique identifiers
-- Functional programming concepts
+- TailwindCSS
+- Client-side rendering
+- Modular component architecture
 
-Recommended Extensions:
-1. Add persistent storage
-2. Implement WebSocket real-time updates
-3. Create comprehensive logging
-4. Add more complex condition evaluations
-5. Integrate with trading platforms
+3. Key Components
+- Trader selection
+- Performance metrics
+- Interactive UI
+- Mock data for demonstration
 
-Would you like me to elaborate on any specific aspect of the implementation?
+Recommended Next Steps:
+1. Implement backend API
+2. Add authentication
+3. Create real-time trading signal integration
+4. Develop more sophisticated state management
+5. Implement blockchain-based verification
+
+Would you like me to expand on any specific aspect of the implementation?
