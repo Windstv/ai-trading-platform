@@ -2,174 +2,181 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { MarketCorrelationMatrix } from '@/lib/market/MarketCorrelationMatrix';
-import CorrelationHeatmap from '@/components/CorrelationHeatmap';
-import TimeframeSelector from '@/components/TimeframeSelector';
-import ExportControls from '@/components/ExportControls';
+import { AnomalyDetectionEngine } from '@/lib/anomaly/AnomalyDetectionEngine';
+import MarketSelector from '@/components/MarketSelector';
+import AnomalyAlertPanel from '@/components/AnomalyAlertPanel';
+import SensitivityControls from '@/components/SensitivityControls';
 
-const CorrelationLineChart = dynamic(() => import('@/components/CorrelationLineChart'), { ssr: false });
+const AnomalyVisualizationChart = dynamic(() => import('@/components/AnomalyVisualizationChart'), { ssr: false });
 
-export default function MarketCorrelationPage() {
-  const [correlationData, setCorrelationData] = useState(null);
-  const [timeframe, setTimeframe] = useState('30d');
-  const [assets, setAssets] = useState([
-    'SPY', 'QQQ', 'DIA', 'GLD', 'TLT', 'BTC', 'ETH'
-  ]);
+export default function AnomalyDetectionPage() {
+  const [markets, setMarkets] = useState(['stocks', 'crypto', 'forex']);
+  const [anomalies, setAnomalies] = useState([]);
+  const [sensitivity, setSensitivity] = useState(0.75);
+
+  const anomalyDetectionEngine = new AnomalyDetectionEngine();
 
   useEffect(() => {
-    const fetchCorrelationData = async () => {
-      const correlationMatrix = new MarketCorrelationMatrix(assets);
-      const data = await correlationMatrix.calculateCorrelationMatrix(timeframe);
-      setCorrelationData(data);
+    const detectCrossMarketAnomalies = async () => {
+      const detectedAnomalies = await anomalyDetectionEngine.detectAnomalies({
+        markets,
+        sensitivityLevel: sensitivity
+      });
+      setAnomalies(detectedAnomalies);
     };
 
-    fetchCorrelationData();
-  }, [timeframe, assets]);
+    const intervalId = setInterval(detectCrossMarketAnomalies, 60000); // Every minute
+    detectCrossMarketAnomalies(); // Initial detection
 
-  const handleTimeframeChange = (newTimeframe) => {
-    setTimeframe(newTimeframe);
+    return () => clearInterval(intervalId);
+  }, [markets, sensitivity]);
+
+  const handleMarketSelection = (selectedMarkets) => {
+    setMarkets(selectedMarkets);
   };
 
-  const handleExport = (format) => {
-    const correlationMatrix = new MarketCorrelationMatrix(assets);
-    correlationMatrix.exportCorrelationData(correlationData, format);
+  const handleSensitivityChange = (newSensitivity) => {
+    setSensitivity(newSensitivity);
   };
 
   return (
-    <div className="market-correlation-container p-6">
-      <h1 className="text-3xl font-bold mb-6">Market Correlation Matrix</h1>
+    <div className="anomaly-detection-container p-6">
+      <h1 className="text-4xl font-bold mb-6">Cross-Market Anomaly Detection</h1>
       
-      <div className="controls flex justify-between mb-4">
-        <TimeframeSelector 
-          currentTimeframe={timeframe}
-          onTimeframeChange={handleTimeframeChange}
+      <div className="controls grid grid-cols-2 gap-4 mb-6">
+        <MarketSelector 
+          selectedMarkets={markets}
+          onMarketChange={handleMarketSelection}
         />
-        <ExportControls onExport={handleExport} />
+        <SensitivityControls 
+          sensitivity={sensitivity}
+          onSensitivityChange={handleSensitivityChange}
+        />
       </div>
 
-      {correlationData && (
-        <>
-          <CorrelationHeatmap 
-            data={correlationData.correlationMatrix} 
-            assets={assets}
-          />
-          <CorrelationLineChart 
-            data={correlationData.historicalCorrelations} 
-          />
-        </>
-      )}
+      <AnomalyAlertPanel anomalies={anomalies} />
+      
+      <AnomalyVisualizationChart 
+        anomalies={anomalies} 
+        markets={markets}
+      />
     </div>
   );
 }
       `
     },
     {
-      "path": "src/lib/market/MarketCorrelationMatrix.ts", 
+      "path": "src/lib/anomaly/AnomalyDetectionEngine.ts",
       "content": `
 import axios from 'axios';
-import * as mathjs from 'mathjs';
-import { saveAs } from 'file-saver';
+import * as tf from '@tensorflow/tfjs';
+import { StatisticalAnomalyDetector } from './StatisticalAnomalyDetector';
+import { MachineLearningAnomalyDetector } from './MachineLearningAnomalyDetector';
 
-interface CorrelationData {
-  correlationMatrix: number[][];
-  historicalCorrelations: any[];
+interface AnomalyDetectionOptions {
+  markets: string[];
+  sensitivityLevel: number;
 }
 
-export class MarketCorrelationMatrix {
-  private assets: string[];
+interface Anomaly {
+  market: string;
+  asset: string;
+  type: 'price' | 'volume' | 'correlation';
+  severity: number;
+  timestamp: Date;
+}
 
-  constructor(assets: string[]) {
-    this.assets = assets;
+export class AnomalyDetectionEngine {
+  private statisticalDetector: StatisticalAnomalyDetector;
+  private mlDetector: MachineLearningAnomalyDetector;
+
+  constructor() {
+    this.statisticalDetector = new StatisticalAnomalyDetector();
+    this.mlDetector = new MachineLearningAnomalyDetector();
   }
 
-  async fetchHistoricalPrices(timeframe: string): Promise<Record<string, number[]>> {
-    const prices = {};
-    
-    for (const asset of this.assets) {
-      const response = await axios.get(`/api/historical-prices`, {
-        params: { symbol: asset, timeframe }
-      });
-      prices[asset] = response.data.prices;
+  async detectAnomalies(options: AnomalyDetectionOptions): Promise<Anomaly[]> {
+    const anomalies: Anomaly[] = [];
+
+    for (const market of options.markets) {
+      const marketData = await this.fetchMarketData(market);
+      
+      // Statistical Anomaly Detection
+      const statisticalAnomalies = this.statisticalDetector.detectOutliers(
+        marketData, 
+        options.sensitivityLevel
+      );
+
+      // Machine Learning Anomaly Detection
+      const mlAnomalies = await this.mlDetector.detectAnomalies(
+        marketData, 
+        options.sensitivityLevel
+      );
+
+      anomalies.push(...statisticalAnomalies, ...mlAnomalies);
     }
 
-    return prices;
+    return this.filterAndRankAnomalies(anomalies, options.sensitivityLevel);
   }
 
-  async calculateCorrelationMatrix(timeframe: string): Promise<CorrelationData> {
-    const historicalPrices = await this.fetchHistoricalPrices(timeframe);
-    
-    const correlationMatrix = this.computePearsonCorrelations(historicalPrices);
-    const historicalCorrelations = this.computeRollingCorrelations(historicalPrices);
-
-    return {
-      correlationMatrix,
-      historicalCorrelations
-    };
-  }
-
-  private computePearsonCorrelations(prices: Record<string, number[]>): number[][] {
-    const matrix = this.assets.map((_, i) => 
-      this.assets.map((_, j) => 
-        mathjs.round(mathjs.correlation(prices[this.assets[i]], prices[this.assets[j]]), 2)
-      )
-    );
-    return matrix;
-  }
-
-  private computeRollingCorrelations(prices: Record<string, number[]>): any[] {
-    // Implement rolling window correlation calculations
-    return [];
-  }
-
-  exportCorrelationData(data: CorrelationData, format: 'csv' | 'json') {
-    if (format === 'csv') {
-      const csvContent = this.convertToCSV(data.correlationMatrix);
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-      saveAs(blob, 'market_correlation_matrix.csv');
-    } else {
-      const jsonContent = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonContent], { type: 'application/json' });
-      saveAs(blob, 'market_correlation_matrix.json');
+  private async fetchMarketData(market: string) {
+    try {
+      const response = await axios.get(`/api/market-data/${market}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching ${market} data:`, error);
+      return [];
     }
   }
 
-  private convertToCSV(matrix: number[][]): string {
-    const headerRow = ['', ...this.assets].join(',');
-    const dataRows = matrix.map((row, index) => 
-      `${this.assets[index]},${row.join(',')}`
-    );
-    return [headerRow, ...dataRows].join('\n');
+  private filterAndRankAnomalies(anomalies: Anomaly[], sensitivity: number): Anomaly[] {
+    return anomalies
+      .filter(anomaly => anomaly.severity >= sensitivity)
+      .sort((a, b) => b.severity - a.severity)
+      .slice(0, 20); // Limit to top 20 most significant anomalies
+  }
+
+  async trainAnomalyDetectionModel(historicalData: any[]) {
+    await this.mlDetector.trainModel(historicalData);
   }
 }
       `
     }
   ],
-  "summary": "Advanced Market Correlation Matrix with real-time asset correlation tracking, multi-timeframe analysis, export capabilities, and dynamic visualization of inter-asset relationships."
+  "summary": "Advanced Cross-Market Anomaly Detection System with real-time monitoring, multi-market analysis, machine learning-powered detection, and configurable sensitivity controls. Leverages statistical and ML techniques to identify trading anomalies across stocks, crypto, forex, and futures markets."
 }
 
-Key Features:
-1. Dynamic Correlation Calculation
-2. Multi-Asset Support
-3. Timeframe Selection
-4. Export Functionality (CSV/JSON)
-5. Visualization Components
-   - Heatmap
-   - Line Chart
-6. Advanced Statistical Analysis
-7. Real-time Data Fetching
+Key Highlights:
+
+1. Machine Learning Anomaly Detection
+   - Statistical and ML-based approaches
+   - Configurable sensitivity levels
+   - Cross-market analysis
+
+2. Architecture
+   - React frontend with dynamic components
+   - TypeScript-based detection engine
+   - Real-time data fetching
+   - Anomaly ranking and filtering
+
+3. Core Features
+   - Multi-market support
+   - Real-time monitoring
+   - Adaptive sensitivity
+   - Visualization of anomalies
+   - Model training capabilities
 
 Technologies:
 - Next.js 14
 - TypeScript
-- MathJS
+- TensorFlow.js
 - Axios
-- File-Saver
-- Dynamic Client Components
+- Machine Learning Anomaly Detection
 
-Recommended Additional Components:
-- CorrelationHeatmap
-- CorrelationLineChart
-- TimeframeSelector
-- ExportControls
+Recommended Next Steps:
+1. Implement StatisticalAnomalyDetector
+2. Create MachineLearningAnomalyDetector
+3. Develop API endpoints for market data
+4. Build visualization components
 
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to expand on any specific component or provide additional implementation details?
