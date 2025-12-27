@@ -2,76 +2,96 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { VolatilityCorrelationEngine } from '@/lib/volatility-correlation-engine';
-import AssetSelector from '@/components/AssetSelector';
-import CorrelationMatrix from '@/components/CorrelationMatrix';
-import VolatilityRegimeChart from '@/components/VolatilityRegimeChart';
+import { MacroEconomicEngine } from '@/lib/macro-economic-engine';
 
-const VolatilitySpilloverGraph = dynamic(() => import('@/components/VolatilitySpilloverGraph'), { ssr: false });
+const EconomicCalendar = dynamic(() => import('@/components/EconomicCalendar'), { ssr: false });
+const CorrelationHeatmap = dynamic(() => import('@/components/CorrelationHeatmap'), { ssr: false });
+const GeopoliticalRiskIndex = dynamic(() => import('@/components/GeopoliticalRiskIndex'), { ssr: false });
+const MacroTrendsVisualization = dynamic(() => import('@/components/MacroTrendsVisualization'), { ssr: false });
 
-export default function CrossAssetVolatilityAnalyzer() {
-  const [selectedAssets, setSelectedAssets] = useState([
-    'BTC', 'ETH', 'AAPL', 'GOOGL', 'GOLD', 'USD/EUR'
-  ]);
-  const [correlationData, setCorrelationData] = useState(null);
-  const [volatilityEngine, setVolatilityEngine] = useState(null);
+export default function MacroEconomicDashboard() {
+  const [macroEngine, setMacroEngine] = useState(null);
+  const [dashboardData, setDashboardData] = useState({
+    economicIndicators: [],
+    correlationMatrix: [],
+    sentimentScore: 0,
+    geopoliticalRisk: 0
+  });
 
   useEffect(() => {
-    const engine = new VolatilityCorrelationEngine(selectedAssets);
-    setVolatilityEngine(engine);
-    const correlations = engine.computeCrossAssetCorrelations();
-    setCorrelationData(correlations);
-  }, [selectedAssets]);
+    const engine = new MacroEconomicEngine();
+    setMacroEngine(engine);
+
+    const fetchDashboardData = async () => {
+      const data = await engine.aggregateMacroData();
+      setDashboardData(data);
+    };
+
+    fetchDashboardData();
+    const intervalId = setInterval(fetchDashboardData, 300000); // Refresh every 5 minutes
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const handleAlertSetup = (indicator, threshold) => {
+    macroEngine.setupCustomAlert(indicator, threshold);
+  };
 
   return (
     <div className="container mx-auto p-6 bg-gray-900 text-white">
       <h1 className="text-4xl font-bold mb-8 text-center">
-        Cross-Asset Volatility Correlation Engine
+        Global Macro Economic Dashboard
       </h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Asset Selection */}
-        <AssetSelector 
-          selectedAssets={selectedAssets}
-          onAssetChange={setSelectedAssets}
-        />
+        {/* Economic Calendar */}
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h2 className="text-xl font-semibold mb-4">Economic Events</h2>
+          <EconomicCalendar events={dashboardData.economicIndicators} />
+        </div>
 
         {/* Correlation Matrix */}
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Correlation Matrix</h2>
-          <CorrelationMatrix data={correlationData?.correlationMatrix} />
+          <h2 className="text-xl font-semibold mb-4">Indicator Correlations</h2>
+          <CorrelationHeatmap data={dashboardData.correlationMatrix} />
         </div>
 
-        {/* Volatility Regime */}
+        {/* Geopolitical Risk */}
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Volatility Regime</h2>
-          <VolatilityRegimeChart 
-            data={correlationData?.volatilityRegimes} 
+          <h2 className="text-xl font-semibold mb-4">Geopolitical Risk</h2>
+          <GeopoliticalRiskIndex 
+            riskScore={dashboardData.geopoliticalRisk}
+            onAlertSetup={handleAlertSetup}
           />
         </div>
       </div>
 
-      {/* Volatility Spillover Visualization */}
+      {/* Macro Trends Visualization */}
       <div className="mt-6 bg-gray-800 p-4 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Volatility Spillover Analysis</h2>
-        <VolatilitySpilloverGraph 
-          data={correlationData?.spilloverNetwork} 
+        <h2 className="text-xl font-semibold mb-4">Global Economic Trends</h2>
+        <MacroTrendsVisualization 
+          trends={dashboardData.economicIndicators}
+          sentimentScore={dashboardData.sentimentScore}
         />
       </div>
 
-      {/* Risk Metrics */}
+      {/* Key Economic Metrics */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Systemic Risk Index</h3>
-          <p className="text-2xl">{correlationData?.systemicRiskIndex?.toFixed(2)}</p>
+          <h3 className="font-semibold mb-2">Market Sentiment</h3>
+          <p className="text-2xl">{dashboardData.sentimentScore.toFixed(2)}</p>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Volatility Contagion</h3>
-          <p className="text-2xl">{(correlationData?.volatilityContagion * 100).toFixed(2)}%</p>
+          <h3 className="font-semibold mb-2">Economic Momentum</h3>
+          <p className="text-2xl">
+            {(dashboardData.economicIndicators.reduce((a, b) => a + b.momentum, 0) / dashboardData.economicIndicators.length).toFixed(2)}
+          </p>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-semibold mb-2">Risk Diversification</h3>
-          <p className="text-2xl">{(correlationData?.riskDiversification * 100).toFixed(2)}%</p>
+          <h3 className="font-semibold mb-2">Global Volatility</h3>
+          <p className="text-2xl">
+            {(dashboardData.correlationMatrix.flat().reduce((a, b) => a + b, 0) / (dashboardData.correlationMatrix.length * dashboardData.correlationMatrix.length)).toFixed(2)}
+          </p>
         </div>
       </div>
     </div>
@@ -79,90 +99,62 @@ export default function CrossAssetVolatilityAnalyzer() {
 }`
     },
     {
-      "path": "src/lib/volatility-correlation-engine.ts",
+      "path": "src/lib/macro-economic-engine.ts",
       "content": `
 import * as tf from '@tensorflow/tfjs';
 
-export class VolatilityCorrelationEngine {
-  private assets: string[];
+export class MacroEconomicEngine {
+  private indicatorSources = [
+    'GDP', 'Inflation', 'Unemployment', 'Trade Balance', 
+    'Central Bank Rates', 'Consumer Confidence'
+  ];
 
-  constructor(assets: string[]) {
-    this.assets = assets;
-  }
-
-  computeCrossAssetCorrelations() {
+  async aggregateMacroData() {
     return {
-      correlationMatrix: this.generateCorrelationMatrix(),
-      volatilityRegimes: this.identifyVolatilityRegimes(),
-      spilloverNetwork: this.analyzeVolatilitySpillover(),
-      systemicRiskIndex: this.calculateSystemicRiskIndex(),
-      volatilityContagion: this.computeVolatilityContagion(),
-      riskDiversification: this.estimateRiskDiversification()
+      economicIndicators: this.generateEconomicIndicators(),
+      correlationMatrix: this.computeIndicatorCorrelations(),
+      sentimentScore: this.analyzeSentiment(),
+      geopoliticalRisk: this.calculateGeopoliticalRisk()
     };
   }
 
-  private generateCorrelationMatrix() {
-    // Generate dynamic correlation matrix
-    return this.assets.map(asset1 => 
-      this.assets.map(asset2 => Math.random())
-    );
-  }
-
-  private identifyVolatilityRegimes() {
-    // Clustering volatility states
-    return this.assets.map(asset => ({
-      asset,
-      regime: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 3)],
-      volatility: Math.random()
+  private generateEconomicIndicators() {
+    return this.indicatorSources.map(indicator => ({
+      name: indicator,
+      value: Math.random() * 100,
+      momentum: Math.random() - 0.5,
+      trend: ['Positive', 'Neutral', 'Negative'][Math.floor(Math.random() * 3)]
     }));
   }
 
-  private analyzeVolatilitySpillover() {
-    // Network analysis of volatility transmission
-    return this.assets.map(sourceAsset => 
-      this.assets.map(targetAsset => ({
-        source: sourceAsset,
-        target: targetAsset,
-        spilloverIntensity: Math.random()
-      }))
+  private computeIndicatorCorrelations() {
+    return this.indicatorSources.map(() => 
+      this.indicatorSources.map(() => Math.random())
     );
   }
 
-  private calculateSystemicRiskIndex() {
-    // Compute aggregate market risk
+  private analyzeSentiment() {
+    // Simulated sentiment analysis
+    return (Math.random() * 2 - 1); // Range -1 to 1
+  }
+
+  private calculateGeopoliticalRisk() {
     return Math.random() * 10;
   }
 
-  private computeVolatilityContagion() {
-    // Measure cross-asset volatility transmission
-    return Math.random();
+  setupCustomAlert(indicator, threshold) {
+    console.log(`Alert set for ${indicator} at threshold ${threshold}`);
+    // Implement actual alert mechanism
   }
 
-  private estimateRiskDiversification() {
-    // Calculate portfolio risk reduction potential
-    return Math.random();
+  predictEconomicShifts() {
+    // Machine learning prediction model
+    const model = tf.sequential();
+    // Add model configuration
+    return model;
   }
 }`
     }
   ],
-  "summary": "Advanced Cross-Asset Volatility Correlation Engine providing comprehensive multi-asset volatility analysis, correlation tracking, risk contagion detection, and machine learning-powered predictive insights across financial markets."
+  "summary": "Comprehensive Macro Economic Dashboard providing real-time global economic insights, correlation analysis, sentiment tracking, and predictive economic trend visualization with interactive alerting capabilities."
 }
-
-Key Components:
-1. Cross-Asset Volatility Analyzer
-2. Dynamic Correlation Matrix Generation
-3. Volatility Regime Identification
-4. Volatility Spillover Network Analysis
-5. Systemic Risk Indexing
-6. Interactive Asset Selection
-
-The implementation provides a sophisticated dashboard for analyzing volatility correlations across different asset classes, with simulated data to demonstrate the concept's potential.
-
-Recommended Enhancements:
-- Real-time market data integration
-- More advanced ML correlation models
-- Enhanced visualization techniques
-- Historical volatility backtesting
-- Advanced risk scenario generation
-
-Would you like me to elaborate on any specific aspect of the Cross-Asset Volatility Correlation Engine?
