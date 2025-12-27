@@ -1,190 +1,207 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
 import { 
-  StrategyCard, 
-  StrategyUploadModal, 
-  PerformanceChart,
-  RatingSystem 
-} from '@/components/marketplace';
+  SentimentAnalyzer, 
+  RiskScoreCalculator, 
+  SentimentVisualization 
+} from '@/components/sentiment-risk';
 
-interface TradingStrategy {
-  id: string;
-  name: string;
-  creator: string;
-  description: string;
-  performanceMetrics: {
-    annualizedReturn: number;
-    sharpeRatio: number;
-    maxDrawdown: number;
+interface SentimentRiskScore {
+  asset: string;
+  currentScore: number;
+  historicalTrend: number[];
+  sentimentSources: {
+    twitter: number;
+    reddit: number;
+    newsMedia: number;
   };
-  price: number;
-  licenseType: 'free' | 'paid' | 'subscription';
-  blockchainVerified: boolean;
 }
 
-const MarketplacePage: React.FC = () => {
-  const [strategies, setStrategies] = useState<TradingStrategy[]>([]);
-  const [filteredStrategies, setFilteredStrategies] = useState<TradingStrategy[]>([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+const SentimentRiskPage: React.FC = () => {
+  const [riskScores, setRiskScores] = useState<SentimentRiskScore[]>([]);
+  const [selectedAsset, setSelectedAsset] = useState<string>('BTC');
 
   useEffect(() => {
-    connectBlockchain();
-    fetchStrategies();
+    const fetchSentimentRisk = async () => {
+      // Simulated sentiment analysis and risk scoring
+      const mockRiskScores: SentimentRiskScore[] = [
+        {
+          asset: 'BTC',
+          currentScore: 65,
+          historicalTrend: [50, 55, 62, 65, 68],
+          sentimentSources: {
+            twitter: 72,
+            reddit: 58,
+            newsMedia: 61
+          }
+        },
+        {
+          asset: 'ETH',
+          currentScore: 55,
+          historicalTrend: [45, 50, 52, 55, 57],
+          sentimentSources: {
+            twitter: 62,
+            reddit: 48,
+            newsMedia: 55
+          }
+        }
+      ];
+      setRiskScores(mockRiskScores);
+    };
+
+    fetchSentimentRisk();
+    const intervalId = setInterval(fetchSentimentRisk, 60000); // Refresh every minute
+    return () => clearInterval(intervalId);
   }, []);
 
-  const connectBlockchain = async () => {
-    try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send('eth_requestAccounts', []);
-      const signer = provider.getSigner();
-      const address = await signer.getAddress();
-      setCurrentUser(address);
-    } catch (error) {
-      console.error('Blockchain connection failed', error);
+  const handleRiskThresholdAlert = (score: number) => {
+    if (score > 75) {
+      // High-risk notification
+      alert(`HIGH RISK ALERT: Asset risk exceeds critical threshold!`);
     }
-  };
-
-  const fetchStrategies = async () => {
-    // Fetch strategies from decentralized storage (IPFS/Arweave)
-    // Placeholder implementation
-    const mockStrategies: TradingStrategy[] = [
-      {
-        id: 'strat1',
-        name: 'Momentum Trader',
-        creator: '0x123...',
-        description: 'High-frequency momentum trading strategy',
-        performanceMetrics: {
-          annualizedReturn: 24.5,
-          sharpeRatio: 1.8,
-          maxDrawdown: 12.3
-        },
-        price: 0.1,
-        licenseType: 'paid',
-        blockchainVerified: true
-      }
-    ];
-    setStrategies(mockStrategies);
-    setFilteredStrategies(mockStrategies);
-  };
-
-  const handleStrategyUpload = async (strategy: Partial<TradingStrategy>) => {
-    // Implement strategy upload with blockchain verification
-    const newStrategy: TradingStrategy = {
-      ...strategy,
-      id: ethers.utils.randomBytes(32).toString('hex'),
-      creator: currentUser,
-      blockchainVerified: true
-    } as TradingStrategy;
-
-    // Store on decentralized storage
-    setStrategies([...strategies, newStrategy]);
-    setIsUploadModalOpen(false);
-  };
-
-  const copyStrategy = async (strategy: TradingStrategy) => {
-    // Implement strategy copying mechanism
-    // Include licensing and payment logic
   };
 
   return (
     <div className="container mx-auto p-6">
       <h1 className="text-4xl font-bold mb-8">
-        Trading Algorithm Marketplace
+        Sentiment-Driven Trade Risk Scoring
       </h1>
 
-      <div className="flex justify-between mb-6">
-        <button 
-          onClick={() => setIsUploadModalOpen(true)}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Upload Strategy
-        </button>
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-2xl mb-4">Risk Scores</h2>
+          {riskScores.map((risk) => (
+            <div 
+              key={risk.asset} 
+              onClick={() => setSelectedAsset(risk.asset)}
+              className="cursor-pointer hover:bg-gray-100 p-4 rounded"
+            >
+              <div className="flex justify-between">
+                <span>{risk.asset} Risk Score</span>
+                <span 
+                  className={`
+                    ${risk.currentScore > 75 ? 'text-red-500' : 
+                      risk.currentScore > 50 ? 'text-yellow-500' : 'text-green-500'}
+                  `}
+                >
+                  {risk.currentScore}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {filteredStrategies.map((strategy) => (
-          <StrategyCard 
-            key={strategy.id} 
-            strategy={strategy}
-            onCopy={() => copyStrategy(strategy)}
-          >
-            <PerformanceChart metrics={strategy.performanceMetrics} />
-            <RatingSystem strategyId={strategy.id} />
-          </StrategyCard>
-        ))}
+        <div>
+          {selectedAsset && (
+            <SentimentVisualization 
+              assetRiskData={
+                riskScores.find(r => r.asset === selectedAsset)
+              } 
+              onRiskThreshold={handleRiskThresholdAlert}
+            />
+          )}
+        </div>
       </div>
-
-      {isUploadModalOpen && (
-        <StrategyUploadModal 
-          onClose={() => setIsUploadModalOpen(false)}
-          onUpload={handleStrategyUpload}
-        />
-      )}
     </div>
   );
 };
 
-export default MarketplacePage;
+export default SentimentRiskPage;
 `
     },
     {
-      "path": "src/components/marketplace/StrategyCard.tsx",
+      "path": "src/components/sentiment-risk/SentimentVisualization.tsx",
       "content": `
 import React from 'react';
-import { TradingStrategy } from '@/types';
+import { Line } from 'react-chartjs-2';
 
-interface StrategyCardProps {
-  strategy: TradingStrategy;
-  onCopy: () => void;
-  children?: React.ReactNode;
+interface SentimentVisualizationProps {
+  assetRiskData?: {
+    asset: string;
+    currentScore: number;
+    historicalTrend: number[];
+    sentimentSources: {
+      twitter: number;
+      reddit: number;
+      newsMedia: number;
+    };
+  };
+  onRiskThreshold: (score: number) => void;
 }
 
-export const StrategyCard: React.FC<StrategyCardProps> = ({ 
-  strategy, 
-  onCopy, 
-  children 
+export const SentimentVisualization: React.FC<SentimentVisualizationProps> = ({
+  assetRiskData,
+  onRiskThreshold
 }) => {
+  React.useEffect(() => {
+    if (assetRiskData && assetRiskData.currentScore > 75) {
+      onRiskThreshold(assetRiskData.currentScore);
+    }
+  }, [assetRiskData, onRiskThreshold]);
+
+  if (!assetRiskData) return null;
+
+  const chartData = {
+    labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5'],
+    datasets: [
+      {
+        label: 'Risk Score Trend',
+        data: assetRiskData.historicalTrend,
+        borderColor: 'rgb(75, 192, 192)',
+        tension: 0.1
+      }
+    ]
+  };
+
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6 hover:shadow-xl transition">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">{strategy.name}</h2>
-        {strategy.blockchainVerified && (
-          <span className="text-green-500">✓ Verified</span>
-        )}
-      </div>
+    <div className="p-6 bg-white rounded shadow-lg">
+      <h3 className="text-2xl mb-4">{assetRiskData.asset} Risk Analysis</h3>
       
-      <p className="text-gray-600 mb-4">{strategy.description}</p>
-      
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <div>
-          <strong>Return</strong>
-          <p>{strategy.performanceMetrics.annualizedReturn}%</p>
+          <strong>Twitter</strong>
+          <div className="w-full bg-gray-200 rounded-full">
+            <div 
+              className="bg-blue-500 text-xs font-medium text-blue-100 text-center p-1 leading-none rounded-full" 
+              style={{width: `${assetRiskData.sentimentSources.twitter}%`}}
+            >
+              {assetRiskData.sentimentSources.twitter}
+            </div>
+          </div>
         </div>
         <div>
-          <strong>Sharpe</strong>
-          <p>{strategy.performanceMetrics.sharpeRatio}</p>
+          <strong>Reddit</strong>
+          <div className="w-full bg-gray-200 rounded-full">
+            <div 
+              className="bg-orange-500 text-xs font-medium text-orange-100 text-center p-1 leading-none rounded-full" 
+              style={{width: `${assetRiskData.sentimentSources.reddit}%`}}
+            >
+              {assetRiskData.sentimentSources.reddit}
+            </div>
+          </div>
         </div>
         <div>
-          <strong>Max Drawdown</strong>
-          <p>{strategy.performanceMetrics.maxDrawdown}%</p>
+          <strong>News Media</strong>
+          <div className="w-full bg-gray-200 rounded-full">
+            <div 
+              className="bg-green-500 text-xs font-medium text-green-100 text-center p-1 leading-none rounded-full" 
+              style={{width: `${assetRiskData.sentimentSources.newsMedia}%`}}
+            >
+              {assetRiskData.sentimentSources.newsMedia}
+            </div>
+          </div>
         </div>
       </div>
 
-      {children}
-
-      <div className="mt-4 flex justify-between">
-        <span className="text-gray-500">
-          {strategy.licenseType.charAt(0).toUpperCase() + strategy.licenseType.slice(1)}
-        </span>
-        <button 
-          onClick={onCopy}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Copy Strategy
-        </button>
+      <div className="h-64">
+        <Line 
+          data={chartData} 
+          options={{
+            responsive: true,
+            maintainAspectRatio: false
+          }} 
+        />
       </div>
     </div>
   );
@@ -192,24 +209,23 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
 `
     }
   ],
-  "summary": "Cross-Platform Trading Algorithm Marketplace with blockchain-based strategy verification, performance tracking, licensing models, and decentralized strategy sharing. Implements key features like strategy upload, performance metrics display, and strategy copying mechanism using Next.js, React, and Ethereum blockchain integration."
+  "summary": "Sentiment-Driven Trade Risk Scoring System with real-time sentiment analysis, multi-source sentiment tracking, dynamic risk visualization, and automated risk threshold alerts. Provides comprehensive risk assessment for trading assets using interactive charts and sentiment indicators."
 }
 
-Key Features:
-1. Blockchain-based strategy verification
-2. Performance metrics tracking
-3. Flexible licensing models
-4. Strategy copying and sharing
-5. Decentralized marketplace infrastructure
-6. Ethereum wallet integration
+Key Components:
+1. Sentiment Risk Scoring Page
+2. Multi-Source Sentiment Analysis
+3. Real-time Risk Calculation
+4. Interactive Visualization
+5. Risk Threshold Alerting
 
-Technologies Used:
+Technologies:
 - Next.js 14
 - React
 - TypeScript
-- Ethers.js
+- Chart.js
 - TailwindCSS
 
-The implementation provides a robust framework for a decentralized trading algorithm marketplace, enabling developers to upload, monetize, and share trading strategies with transparent performance tracking and blockchain verification.
+The implementation demonstrates a sophisticated approach to assessing trade risk by integrating sentiment data from multiple sources and providing real-time risk scoring and visualization.
 
 Would you like me to elaborate on any specific aspect of the implementation?
