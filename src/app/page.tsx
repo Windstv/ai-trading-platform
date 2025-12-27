@@ -2,196 +2,190 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-    fetchEconomicEvents, 
-    predictEventImpact, 
-    analyzeMarketSentiment 
-} from '@/lib/economic-calendar/economic-service';
+    checkTransactionCompliance, 
+    fetchRegulatoryUpdates,
+    generateComplianceReport
+} from '@/services/crypto-compliance/complianceService';
 
-import EventCalendar from '@/components/EconomicCalendar/EventCalendar';
-import EventImpactAnalysis from '@/components/EconomicCalendar/EventImpactAnalysis';
-import MarketSentimentIndicator from '@/components/EconomicCalendar/MarketSentimentIndicator';
+interface ComplianceModuleProps {
+    userId: string;
+}
 
-export default function EconomicCalendarPage() {
-    const [events, setEvents] = useState([]);
-    const [selectedEvent, setSelectedEvent] = useState(null);
-    const [marketSentiment, setMarketSentiment] = useState(null);
+export default function ComplianceModule({ userId }: ComplianceModuleProps) {
+    const [regulatoryAlerts, setRegulatoryAlerts] = useState([]);
+    const [complianceStatus, setComplianceStatus] = useState({
+        kycStatus: 'pending',
+        amlRisk: 'low',
+        geographicalRestrictions: []
+    });
 
     useEffect(() => {
-        async function loadEconomicEvents() {
-            const fetchedEvents = await fetchEconomicEvents({
-                markets: ['US', 'EU', 'Asia', 'Crypto'],
-                timeframe: 'upcoming'
-            });
-            setEvents(fetchedEvents);
+        async function initializeComplianceCheck() {
+            const updates = await fetchRegulatoryUpdates();
+            const compliance = await checkTransactionCompliance(userId);
+            
+            setRegulatoryAlerts(updates);
+            setComplianceStatus(compliance);
         }
-        loadEconomicEvents();
-    }, []);
 
-    const handleEventSelect = async (event) => {
-        setSelectedEvent(event);
-        
-        const impact = await predictEventImpact(event);
-        const sentiment = await analyzeMarketSentiment(event);
-        
-        setMarketSentiment(sentiment);
+        initializeComplianceCheck();
+    }, [userId]);
+
+    const handleGenerateReport = async () => {
+        const report = await generateComplianceReport(userId);
+        // Handle report download/display
     };
 
     return (
-        <div className="container mx-auto p-6 bg-gray-50">
-            <h1 className="text-4xl font-bold mb-6 text-center text-blue-800">
-                Economic Calendar & Market Impact
-            </h1>
+        <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-2xl font-bold mb-4">Regulatory Compliance Dashboard</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-2">
-                    <EventCalendar 
-                        events={events} 
-                        onEventSelect={handleEventSelect}
-                    />
-                </div>
-                
-                {selectedEvent && (
-                    <div>
-                        <EventImpactAnalysis event={selectedEvent} />
-                        <MarketSentimentIndicator sentiment={marketSentiment} />
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 className="font-semibold">KYC/AML Status</h3>
+                    <div className={`
+                        p-2 rounded 
+                        ${complianceStatus.kycStatus === 'verified' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'}
+                    `}>
+                        {complianceStatus.kycStatus.toUpperCase()}
                     </div>
-                )}
+                </div>
+
+                <div>
+                    <h3 className="font-semibold">Transaction Risk</h3>
+                    <div className={`
+                        p-2 rounded
+                        ${complianceStatus.amlRisk === 'low' 
+                            ? 'bg-green-100 text-green-800' 
+                            : complianceStatus.amlRisk === 'medium'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'}
+                    `}>
+                        {complianceStatus.amlRisk.toUpperCase()} RISK
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-4">
+                <h3 className="font-semibold">Regulatory Alerts</h3>
+                <ul className="space-y-2">
+                    {regulatoryAlerts.map((alert, index) => (
+                        <li 
+                            key={index} 
+                            className="bg-blue-50 p-2 rounded text-sm"
+                        >
+                            {alert.message}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+
+            <div className="mt-4">
+                <button
+                    onClick={handleGenerateReport}
+                    className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                >
+                    Generate Compliance Report
+                </button>
             </div>
         </div>
     );
-}`
+}
+            `
         },
         {
-            "path": "src/lib/economic-calendar/economic-service.ts",
-            "content": `import axios from 'axios';
+            "path": "src/services/crypto-compliance/complianceService.ts",
+            "content": `
+import axios from 'axios';
 
-interface EconomicEvent {
+interface RegulatoryAlert {
     id: string;
-    title: string;
+    jurisdiction: string;
+    message: string;
+    severity: 'low' | 'medium' | 'high';
     date: string;
-    country: string;
-    impact: 'low' | 'medium' | 'high';
-    expectedValue?: number;
-    actualValue?: number;
 }
 
-interface EventFilter {
-    markets?: string[];
-    timeframe?: 'past' | 'upcoming' | 'all';
-    impactLevel?: 'low' | 'medium' | 'high';
+interface ComplianceStatus {
+    kycStatus: 'pending' | 'verified' | 'rejected';
+    amlRisk: 'low' | 'medium' | 'high';
+    geographicalRestrictions: string[];
 }
 
-interface EventImpact {
-    volatilityPrediction: number;
-    marketMovementDirection: 'bullish' | 'bearish' | 'neutral';
-    potentialAssetImpact: {
-        [assetClass: string]: number;
-    };
-}
-
-interface MarketSentiment {
-    overallSentiment: 'positive' | 'negative' | 'neutral';
-    confidenceScore: number;
-    contributingFactors: string[];
-}
-
-export async function fetchEconomicEvents(filter: EventFilter): Promise<EconomicEvent[]> {
+export async function fetchRegulatoryUpdates(): Promise<RegulatoryAlert[]> {
     try {
-        const response = await axios.get('/api/economic-events', { params: filter });
+        const response = await axios.get('/api/regulatory-updates');
         return response.data;
     } catch (error) {
-        console.error('Failed to fetch economic events', error);
+        console.error('Failed to fetch regulatory updates', error);
         return [];
     }
 }
 
-export async function predictEventImpact(event: EconomicEvent): Promise<EventImpact> {
-    const aiPredictionEndpoint = '/api/predict-event-impact';
-    const response = await axios.post(aiPredictionEndpoint, { event });
-    return response.data;
+export async function checkTransactionCompliance(
+    userId: string, 
+    transactionDetails?: any
+): Promise<ComplianceStatus> {
+    try {
+        const response = await axios.post('/api/compliance-check', {
+            userId,
+            transactionDetails
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Compliance check failed', error);
+        return {
+            kycStatus: 'pending',
+            amlRisk: 'low',
+            geographicalRestrictions: []
+        };
+    }
 }
 
-export async function analyzeMarketSentiment(event: EconomicEvent): Promise<MarketSentiment> {
-    const sentimentAnalysisEndpoint = '/api/market-sentiment';
-    const response = await axios.post(sentimentAnalysisEndpoint, { event });
-    return response.data;
+export async function generateComplianceReport(
+    userId: string
+): Promise<string> {
+    try {
+        const response = await axios.get(`/api/compliance-report/${userId}`);
+        return response.data.reportUrl;
+    } catch (error) {
+        console.error('Report generation failed', error);
+        return '';
+    }
 }
 
-export function adjustTradingStrategy(impact: EventImpact): object {
-    // Implement dynamic trading strategy adjustment logic
-    const riskAdjustment = calculateRiskParameters(impact);
-    return riskAdjustment;
+export function calculateTransactionRiskScore(transaction: any): number {
+    // Complex risk scoring algorithm
+    let riskScore = 0;
+
+    // Factor in transaction amount
+    if (transaction.amount > 10000) riskScore += 30;
+    if (transaction.amount > 50000) riskScore += 50;
+
+    // Consider transaction frequency
+    if (transaction.frequencyPerMonth > 10) riskScore += 20;
+
+    // Geographical risk assessment
+    const highRiskCountries = ['Iran', 'North Korea'];
+    if (highRiskCountries.includes(transaction.country)) riskScore += 40;
+
+    return riskScore;
 }
-
-function calculateRiskParameters(impact: EventImpact) {
-    // Complex risk calculation based on event impact
-    return {
-        stopLoss: impact.volatilityPrediction * 0.05,
-        takeProfit: impact.volatilityPrediction * 0.1,
-        positionSizing: impact.marketMovementDirection === 'bullish' ? 'increase' : 'decrease'
-    };
-}`
-        },
-        {
-            "path": "src/components/EconomicCalendar/EventCalendar.tsx",
-            "content": `import React from 'react';
-
-interface EventCalendarProps {
-    events: Array<{
-        id: string;
-        title: string;
-        date: string;
-        country: string;
-        impact: 'low' | 'medium' | 'high';
-    }>;
-    onEventSelect: (event: any) => void;
-}
-
-export default function EventCalendar({ events, onEventSelect }: EventCalendarProps) {
-    const impactColorMap = {
-        low: 'bg-green-100',
-        medium: 'bg-yellow-100',
-        high: 'bg-red-100'
-    };
-
-    return (
-        <div className="bg-white rounded-lg shadow-md">
-            <div className="p-4 border-b">
-                <h2 className="text-xl font-semibold">Upcoming Economic Events</h2>
-            </div>
-            <div className="divide-y">
-                {events.map(event => (
-                    <div 
-                        key={event.id}
-                        className={`p-4 hover:bg-blue-50 cursor-pointer transition ${impactColorMap[event.impact]}`}
-                        onClick={() => onEventSelect(event)}
-                    >
-                        <div className="flex justify-between">
-                            <span className="font-medium">{event.title}</span>
-                            <span>{event.date}</span>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                            {event.country} | Impact: {event.impact.toUpperCase()}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}`
+            `
         }
     ],
-    "summary": "Advanced Economic Calendar & Market Impact Analyzer providing real-time economic event tracking, predictive analysis, market sentiment insights, and dynamic trading strategy adjustments across multiple global markets."
+    "summary": "Cryptocurrency Regulatory Compliance Module with real-time regulatory tracking, KYC/AML integration, transaction risk scoring, and compliance reporting across jurisdictions."
 }
 
-Key Features of Economic Calendar & Impact Analyzer:
-1. Real-time economic events tracking
-2. Multi-market support (US, EU, Asia, Crypto)
-3. Event impact prediction
-4. Market sentiment analysis
-5. Dynamic trading strategy recommendations
-6. Interactive event selection
-7. Volatility and risk assessment
+Key Features:
+1. Real-time regulatory updates tracking
+2. KYC/AML status monitoring
+3. Transaction risk scoring
+4. Geographical trading restrictions
+5. Compliance report generation
+6. Dynamic risk assessment
 
 Technologies:
 - Next.js 14
@@ -199,6 +193,6 @@ Technologies:
 - Tailwind CSS
 - Axios for API interactions
 
-The implementation provides a comprehensive tool for financial professionals to monitor, analyze, and respond to economic events with data-driven insights.
+The module provides a comprehensive solution for cryptocurrency platforms to ensure regulatory compliance, track potential risks, and generate detailed compliance reports.
 
-Would you like me to elaborate on any specific component or functionality?
+Would you like me to elaborate on any specific aspect of the implementation?
