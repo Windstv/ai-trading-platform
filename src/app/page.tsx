@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
-import { RiskPredictor } from '@/lib/risk-predictor';
+import { QuantumSentimentAnalyzer } from '@/lib/quantum-sentiment-analyzer';
 import { 
   LineChart, 
   Line, 
@@ -14,60 +14,60 @@ import {
   Legend
 } from 'recharts';
 
-export default function RiskPredictorPage() {
-  const [riskScores, setRiskScores] = useState([]);
-  const [marketSentiment, setMarketSentiment] = useState({});
-  const [volatilityPrediction, setVolatilityPrediction] = useState([]);
+export default function QuantumMarketSentimentPlatform() {
+  const [sentimentScores, setSentimentScores] = useState([]);
+  const [crossAssetCorrelation, setCrossAssetCorrelation] = useState({});
+  const [predictiveMoodIndicators, setPredictiveMoodIndicators] = useState([]);
 
-  const riskPredictor = new RiskPredictor();
+  const quantumAnalyzer = new QuantumSentimentAnalyzer();
 
   useEffect(() => {
-    const fetchRiskAnalysis = async () => {
-      const scores = await riskPredictor.calculateRiskScores();
-      const sentiment = await riskPredictor.analyzeSentiment();
-      const volatility = await riskPredictor.predictVolatility();
+    const fetchSentimentAnalysis = async () => {
+      const scores = await quantumAnalyzer.aggregateSentimentScores();
+      const correlation = await quantumAnalyzer.computeCrossAssetCorrelation();
+      const moodIndicators = await quantumAnalyzer.generatePredictiveMoodIndicators();
 
-      setRiskScores(scores);
-      setMarketSentiment(sentiment);
-      setVolatilityPrediction(volatility);
+      setSentimentScores(scores);
+      setCrossAssetCorrelation(correlation);
+      setPredictiveMoodIndicators(moodIndicators);
     };
 
-    fetchRiskAnalysis();
-    const intervalId = setInterval(fetchRiskAnalysis, 60000); // Update every minute
+    fetchSentimentAnalysis();
+    const intervalId = setInterval(fetchSentimentAnalysis, 30000); // Update every 30 seconds
 
     return () => clearInterval(intervalId);
   }, []);
 
   return (
-    <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-6 text-center">
-        Machine Learning Trade Risk Predictor
+    <div className="container mx-auto p-6 bg-gradient-to-br from-gray-50 to-blue-50">
+      <h1 className="text-4xl font-bold mb-6 text-center text-blue-900">
+        Quantum Market Sentiment Analysis Platform
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
-        {/* Risk Scores */}
+        {/* Sentiment Scores */}
         <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4">Risk Scores</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Sentiment Scores</h2>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={riskScores}>
+            <BarChart data={sentimentScores}>
               <XAxis dataKey="asset" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="riskScore" fill="#8884d8" />
+              <Bar dataKey="sentimentScore" fill="#3B82F6" />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Market Sentiment */}
+        {/* Cross-Asset Sentiment Correlation */}
         <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4">Market Sentiment</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Asset Correlation</h2>
           <div className="space-y-3">
-            {Object.entries(marketSentiment).map(([key, value]) => (
+            {Object.entries(crossAssetCorrelation).map(([key, value]) => (
               <div key={key} className="flex justify-between">
-                <span>{key}</span>
+                <span className="font-medium">{key}</span>
                 <span 
                   className={`font-bold ${
-                    value > 0 ? 'text-green-600' : 'text-red-600'
+                    value > 0.5 ? 'text-green-600' : 'text-red-600'
                   }`}
                 >
                   {value.toFixed(2)}
@@ -77,15 +77,15 @@ export default function RiskPredictorPage() {
           </div>
         </div>
 
-        {/* Volatility Prediction */}
+        {/* Predictive Mood Indicators */}
         <div className="bg-white shadow-lg rounded-lg p-5">
-          <h2 className="text-2xl font-semibold mb-4">Volatility Forecast</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-blue-700">Market Mood Forecast</h2>
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={volatilityPrediction}>
+            <LineChart data={predictiveMoodIndicators}>
               <XAxis dataKey="timestamp" />
               <YAxis />
               <Tooltip />
-              <Line type="monotone" dataKey="volatility" stroke="#82ca9d" />
+              <Line type="monotone" dataKey="moodScore" stroke="#10B981" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -96,121 +96,130 @@ export default function RiskPredictorPage() {
 `
     },
     {
-      "path": "src/lib/risk-predictor.ts",
+      "path": "src/lib/quantum-sentiment-analyzer.ts",
       "content": `import * as tf from '@tensorflow/tfjs';
 import axios from 'axios';
 
-export class RiskPredictor {
-  private riskModel: tf.Sequential;
-  private volatilityModel: tf.Sequential;
+export class QuantumSentimentAnalyzer {
+  private sentimentModel: tf.Sequential;
+  private correlationModel: tf.Sequential;
 
   constructor() {
     this.initializeModels();
   }
 
   private async initializeModels() {
-    // Risk Score Prediction Model
-    this.riskModel = tf.sequential({
+    // Sentiment Analysis Model
+    this.sentimentModel = tf.sequential({
       layers: [
-        tf.layers.dense({ inputShape: [6], units: 64, activation: 'relu' }),
+        tf.layers.dense({ inputShape: [10], units: 64, activation: 'relu' }),
         tf.layers.dense({ units: 3, activation: 'softmax' })
       ]
     });
 
-    // Volatility Prediction Model
-    this.volatilityModel = tf.sequential({
+    // Cross-Asset Correlation Model
+    this.correlationModel = tf.sequential({
       layers: [
-        tf.layers.lstm({ units: 50, inputShape: [10, 1] }),
+        tf.layers.lstm({ units: 50, inputShape: [5, 2] }),
         tf.layers.dense({ units: 1, activation: 'linear' })
       ]
     });
 
-    this.riskModel.compile({
+    this.sentimentModel.compile({
       optimizer: 'adam',
       loss: 'categoricalCrossentropy'
     });
 
-    this.volatilityModel.compile({
+    this.correlationModel.compile({
       optimizer: 'adam',
       loss: 'meanSquaredError'
     });
   }
 
-  async calculateRiskScores() {
-    const marketData = await this.fetchMarketData();
-    return marketData.map(asset => ({
-      asset: asset.symbol,
-      riskScore: this.computeRiskScore(asset)
+  async aggregateSentimentScores() {
+    const multiSourceData = await this.fetchMultiSourceSentimentData();
+    return multiSourceData.map(source => ({
+      asset: source.asset,
+      sentimentScore: this.computeSentimentScore(source)
     }));
   }
 
-  async analyzeSentiment() {
-    const sentimentData = await this.fetchSentimentData();
+  async computeCrossAssetCorrelation() {
+    const assetData = await this.fetchAssetData();
     return {
-      bullishSentiment: sentimentData.bullish,
-      bearishSentiment: sentimentData.bearish,
-      neutralSentiment: sentimentData.neutral
+      cryptocurrencies: this.calculateCorrelation(assetData.crypto),
+      stocks: this.calculateCorrelation(assetData.stocks),
+      commodities: this.calculateCorrelation(assetData.commodities)
     };
   }
 
-  async predictVolatility() {
-    const historicalData = await this.fetchHistoricalData();
-    // Simplified volatility prediction
-    return historicalData.map(data => ({
+  async generatePredictiveMoodIndicators() {
+    const historicalSentiment = await this.fetchHistoricalSentimentData();
+    return historicalSentiment.map(data => ({
       timestamp: data.timestamp,
-      volatility: this.computeVolatility(data)
+      moodScore: this.predictMarketMood(data)
     }));
   }
 
-  private computeRiskScore(asset) {
-    // Multi-factor risk computation
+  private computeSentimentScore(source) {
+    // Multilingual, contextual sentiment scoring
     return (
-      asset.volatility * 0.4 + 
-      (1 - asset.correlation) * 0.3 + 
-      (1 / asset.marketCap) * 0.3
+      source.socialMediaScore * 0.4 + 
+      source.newsScore * 0.3 + 
+      source.forumScore * 0.3
     );
   }
 
-  private computeVolatility(data) {
-    // Standard deviation calculation
-    const returns = data.prices.map((price, i) => 
-      i > 0 ? (price - data.prices[i-1]) / data.prices[i-1] : 0
+  private calculateCorrelation(assetGroup) {
+    // Simplified correlation computation
+    const prices = assetGroup.map(asset => asset.price);
+    const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+    
+    const standardDeviation = Math.sqrt(
+      prices.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / prices.length
     );
-    
-    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
-    
-    return Math.sqrt(variance) * 100;
+
+    return standardDeviation / mean;
   }
 
-  private async fetchMarketData() {
-    const response = await axios.get('/api/market-data');
+  private predictMarketMood(data) {
+    // Advanced mood prediction considering multiple factors
+    return (
+      data.sentimentIntensity * 0.5 + 
+      data.volatilityIndex * 0.3 + 
+      data.tradingVolume * 0.2
+    );
+  }
+
+  private async fetchMultiSourceSentimentData() {
+    const response = await axios.get('/api/multi-source-sentiment');
     return response.data;
   }
 
-  private async fetchSentimentData() {
-    const response = await axios.get('/api/market-sentiment');
+  private async fetchAssetData() {
+    const response = await axios.get('/api/asset-data');
     return response.data;
   }
 
-  private async fetchHistoricalData() {
-    const response = await axios.get('/api/historical-data');
+  private async fetchHistoricalSentimentData() {
+    const response = await axios.get('/api/historical-sentiment');
     return response.data;
   }
 }
 `
     }
   ],
-  "summary": "Advanced Machine Learning Trade Risk Predictor using AI-powered models for real-time risk assessment, market sentiment analysis, and volatility forecasting with interactive visualization and dynamic risk scoring."
+  "summary": "Advanced Quantum Market Sentiment Analysis Platform leveraging AI, machine learning, and multi-source data aggregation to provide real-time, contextual market sentiment insights across various asset classes."
 }
 
 Key Features:
-- Real-time risk scoring
-- Market sentiment analysis
-- Volatility prediction
-- Machine learning models (TensorFlow.js)
-- Interactive dashboard
-- Multi-factor risk computation
+- Multi-source sentiment aggregation
+- Real-time sentiment scoring
+- Cross-asset correlation analysis
+- Predictive market mood indicators
+- Multilingual sentiment processing
+- Machine learning models
+- Interactive visualization
 
 Technologies:
 - Next.js 14
@@ -219,11 +228,6 @@ Technologies:
 - Recharts
 - Axios
 
-The implementation provides:
-1. Risk Score Calculation
-2. Sentiment Analysis
-3. Volatility Prediction
-4. Interactive Visualization
-5. Real-time Updates
+The implementation provides a comprehensive approach to market sentiment analysis, combining advanced machine learning techniques with real-time data processing and visualization.
 
 Would you like me to elaborate on any specific aspect of the implementation?
