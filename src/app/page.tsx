@@ -1,1 +1,452 @@
-'use client';\n\nimport React, { useState, useEffect } from 'react';\nimport { \n  LineChart, Line, BarChart, Bar, ScatterChart, Scatter, \n  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, \n  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,\n  Heatmap, HeatmapCell, PieChart, Pie, Cell, AreaChart, Area,\n  ComposedChart\n} from 'recharts';\nimport { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';\nimport { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';\nimport { Button } from '@/components/ui/button';\nimport { Input } from '@/components/ui/input';\nimport { Label } from '@/components/ui/label';\nimport { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';\nimport { Slider } from '@/components/ui/slider';\nimport { Switch } from '@/components/ui/switch';\nimport { Badge } from '@/components/ui/badge';\nimport { Progress } from '@/components/ui/progress';\nimport { \n  Search, \n  Filter, \n  Download, \n  Play, \n  Pause, \n  RefreshCw, \n  BarChart3, \n  TrendingUp, \n  Cpu, \n  Zap, \n  Shield, \n  AlertTriangle,\n  ChevronRight,\n  ChevronLeft,\n  Activity,\n  Globe,\n  Layers,\n  AlertCircle,\n  Target,\n  PieChart as PieChartIcon,\n  Network,\n  TrendingDown,\n  MessageSquare,\n  Twitter,\n  Reddit,\n  Hash,\n  TrendingUp as TrendingUpIcon,\n  TrendingDown as TrendingDownIcon,\n  Bell,\n  Users,\n  Hash as HashIcon,\n  BarChart2,\n  Link as LinkIcon,\n  FileText,\n  FileSpreadsheet,\n  Calculator,\n  Cpu as CpuIcon,\n  Wind,\n  Target as TargetIcon,\n  AlertOctagon,\n  TrendingUp as TrendingUpIcon2,\n  TrendingDown as TrendingDownIcon2,\n  BarChart as BarChartIcon,\n  LineChart as LineChartIcon,\n  Newspaper,\n  TrendingUp as TrendingUpIcon3,\n  TrendingDown as TrendingDownIcon3,\n  AlertCircle as AlertCircleIcon,\n  Activity as ActivityIcon,\n  Hash as HashIcon2,\n  MessageSquare as MessageSquareIcon,\n  Globe as GlobeIcon,\n  Users as UsersIcon,\n  Bell as BellIcon,\n  Filter as FilterIcon,\n  Download as DownloadIcon,\n  Brain,\n  Sparkles,\n  Code,\n  FileJson,\n  BarChart4,\n  Target as TargetIcon2,\n  AlertOctagon as AlertOctagonIcon,\n  Zap as ZapIcon,\n  Shield as ShieldIcon,\n  Cpu as CpuIcon2\n} from 'lucide-react';\n\n// Types\ninterface StatisticalArbitragePair {\n  id: string;\n  asset1: string;\n  asset2: string;\n  correlation: number;\n  spread: number;\n  zScore: number;\n  halfLife: number;\n  entryThreshold: number;\n  exitThreshold: number;\n  sharpeRatio: number;\n  status: 'active' | 'inactive' | 'alert';\n}\n\ninterface MLFeature {\n  name: string;\n  type: 'technical' | 'fundamental' | 'market' | 'sentiment';\n  importance: number;\n  correlation: number;\n  stability: number;\n}\n\ninterface FactorModel {\n  factor: string;\n  exposure: number;\n  riskPremium: number;\n  tStat: number;\n  pValue: number;\n  rSquared: number;\n}\n\ninterface PortfolioWeight {\n  symbol: string;\n  name: string;\n  mvoWeight: number;\n  riskParityWeight: number;\n  blackLittermanWeight: number;\n  currentWeight: number;\n}\n\ninterface MonteCarloResult {\n  iteration: number;\n  portfolioReturn: number;\n  portfolioVolatility: number;\n  sharpeRatio: number;\n  maxDrawdown: number;\n}\n\ninterface PerformanceMetric {\n  metric: string;\n  value: number;\n  benchmark: number;\n  explanation: string;\n}\n\ninterface RiskFactor {\n  factor: string;\n  exposure: number;\n  contribution: number;\n  risk: number;\n  color: string;\n}\n\ninterface CrossAssetCorrelation {\n  asset1: string;\n  asset2: string;\n  correlation: number;\n  rollingCorrelation: number[];\n  regime: 'high' | 'medium' | 'low';\n}\n\n// New Types for AI Trade Strategy Generator\ninterface AIStrategy {\n  id: string;\n  name: string;\n  description: string;\n  type: 'mean_reversion' | 'momentum' | 'breakout' | 'arbitrage' | 'ml_based' | 'hybrid';\n  complexity: number; // 1-10\n  winRate: number; // 0-100%\n  profitFactor: number; // Gross Profit / Gross Loss\n  sharpeRatio: number;\n  maxDrawdown: number;\n  avgTradeDuration: string; // e.g., \"2h 30m\"\n  signals: StrategySignal[];\n  riskMetrics: RiskMetrics;\n  configuration: StrategyConfig;\n  generatedAt: string;\n  status: 'generating' | 'ready' | 'backtesting' | 'optimizing';\n}\n\ninterface StrategySignal {\n  type: 'entry' | 'exit' | 'stop_loss' | 'take_profit';\n  condition: string;\n  indicator: string;\n  value: number;\n  timeframe: string;\n}\n\ninterface RiskMetrics {\n  valueAtRisk95: number;\n  expectedShortfall: number;\n  sortinoRatio: number;\n  calmarRatio: number;\n  ulcerIndex: number;\n  riskRewardRatio: number;\n  probabilityOfProfit: number;\n}\n\ninterface StrategyConfig {\n  entryConditions: Condition[];\n  exitConditions: Condition[];\n  positionSizing: PositionSizing;\n  riskManagement: RiskManagement;\n  indicators: IndicatorConfig[];\n}\n\ninterface Condition {\n  id: string;\n  type: 'indicator_crossover' | 'price_level' | 'volume_spike' | 'pattern_recognition';\n  operator: '>' | '<' | '>=' | '<=' | '==' | 'cross_above' | 'cross_below';\n  leftOperand: string;\n  rightOperand: string | number;\n  timeframe: string;\n}\n\ninterface PositionSizing {\n  method: 'fixed' | 'kelly' | 'optimal_f' | 'volatility_based';\n  maxPositionSize: number;\n  maxPortfolioRisk: number;\n  scalingRules: ScalingRule[];\n}\n\ninterface ScalingRule {\n  condition: string;\n  action: 'add' | 'reduce' | 'close';\n  sizeChange: number;\n}\n\ninterface RiskManagement {\n  stopLossType: 'fixed' | 'atr_based' | 'trailing' | 'volatility';\n  stopLossValue: number;\n  takeProfitType: 'fixed' | 'risk_reward' | 'dynamic';\n  takeProfitValue: number;\n  maxDailyLoss: number;\n  maxConsecutiveLosses: number;\n}\n\ninterface IndicatorConfig {\n  name: string;\n  type: 'trend' | 'momentum' | 'volatility' | 'volume';\n  parameters: Record<string, number>;\n  timeframe: string;\n}\n\ninterface StrategyGenerationParams {\n  market: string;\n  timeframe: string;\n  strategyTypes: string[];\n  complexityRange: [number, number];\n  riskTolerance: 'low' | 'medium' | 'high';\n  maxDrawdownLimit: number;\n  minWinRate: number;\n  dataPeriod: string;\n}\n\ninterface BacktestResult {\n  totalTrades: number;\n  winningTrades: number;\n  losingTrades: number;\n  winRate: number;\n  profitFactor: number;\n  totalReturn: number;\n  sharpeRatio: number;\n  maxDrawdown: number;\n  avgWin: number;\n  avgLoss: number;\n  expectancy: number;\n  equityCurve: EquityPoint[];\n  tradeHistory: TradeRecord[];\n}\n\ninterface EquityPoint {\n  date: string;\n  equity: number;\n  drawdown: number;\n}\n\ninterface TradeRecord {\n  id: string;\n  entryTime: string;\n  exitTime: string;\n  symbol: string;\n  direction: 'long' | 'short';\n  entryPrice: number;\n  exitPrice: number;\n  pnl: number;\n  pnlPercent: number;\n  duration: string;\n}\n\n// Mock Data\nconst mockStrategies: AIStrategy[] = [\n  {\n    id: '1',\n    name: 'Quantum Mean Reversion',\n    description: 'AI-optimized mean reversion strategy using machine learning to detect optimal entry/exit points',\n    type: 'mean_reversion',\n    complexity: 8,\n    winRate: 68.5,\n    profitFactor: 2.3,\n    sharpeRatio: 1.8,\n    maxDrawdown: -12.4,\n    avgTradeDuration: '3h 15m',\n    signals: [\n      { type: 'entry', condition: 'RSI < 30 AND Volume > 1.5x avg', indicator: 'RSI', value: 30, timeframe: '1h' },\n      { type: 'exit', condition: 'Price > 20-period MA', indicator: 'MA', value: 20, timeframe: '1h' },\n    ],\n    riskMetrics: {\n      valueAtRisk95: -2.1,\n      expectedShortfall: -3.5,\n      sortinoRatio: 2.1,\n      calmarRatio: 1.4,\n      ulcerIndex: 5.2,\n      riskRewardRatio: 2.8,\n      probabilityOfProfit: 72.3,\n    },\n    configuration: {\n      entryConditions: [\n        { id: '1', type: 'indicator_crossover', operator: '<', leftOperand: 'RSI(14)', rightOperand: 30, timeframe: '1h' },\n        { id: '2', type: 'volume_spike', operator: '>', leftOperand: 'Volume', rightOperand: 1.5, timeframe: '1h' },\n      ],\n      exitConditions: [\n        { id: '3', type: 'indicator_crossover', operator: 'cross_above', leftOperand: 'Price', rightOperand: 'MA(20)', timeframe: '1h' },\n      ],\n      positionSizing: {\n        method: 'kelly',\n        maxPositionSize: 5,\n        maxPortfolioRisk: 2,\n        scalingRules: [\n          { condition: 'Profit > 2%', action: 'add', sizeChange: 0.5 },\n          { condition: 'Loss > 1%', action: 'reduce', sizeChange: 0.5 },\n        ],\n      },\n      riskManagement: {\n        stopLossType: 'atr_based',\n        stopLossValue: 2,\n        takeProfitType: 'risk_reward',\n        takeProfitValue: 3,\n        maxDailyLoss: 5,\n        maxConsecutiveLosses: 3,\n      },\n      indicators: [\n        { name: 'RSI', type: 'momentum', parameters: { period: 14 }, timeframe: '1h' },\n        { name: 'MA', type: 'trend', parameters: { period: 20 }, timeframe: '1h' },\n        { name: 'ATR', type: 'volatility', parameters: { period: 14 }, timeframe: '1h' },\n      ],\n    },\n    generatedAt: '2024-01-15T10:30:00Z',\n    status: 'ready',\n  },\n  {\n    id: '2',\n    name: 'Neural Momentum Breakout',\n    description: 'Deep learning based breakout detection with adaptive risk management',\n    type: 'breakout',\n    complexity: 9,\n    winRate: 55.2,\n    profitFactor: 1.8,\n    sharpeRatio: 1.5,\n    maxDrawdown: -15.2,\n    avgTradeDuration: '6h 45m',\n    signals: [\n      { type: 'entry', condition: 'Price > 50-day high AND Volume surge', indicator: 'Price', value: 0, timeframe: '4h' },\n      { type: 'exit', condition: 'MACD bearish crossover', indicator: 'MACD', value: 0, timeframe: '4h' },\n    ],\n    riskMetrics: {\n      valueAtRisk95: -3.2,\n      expectedShortfall: -4.8,\n      sortinoRatio: 1.8,\n      calmarRatio: 1.1,\n      ulcerIndex: 7.1,\n      riskRewardRatio: 2.2,\n      probabilityOfProfit: 65.4,\n    },\n    configuration: {\n      entryConditions: [\n        { id: '1', type: 'price_level', operator: '>', leftOperand: 'Price', rightOperand: 'High(50)', timeframe: '4h' },\n        { id: '2', type: 'volume_spike', operator: '>', leftOperand: 'Volume', rightOperand: 2, timeframe: '4h' },\n      ],\n      exitConditions: [\n        { id: '3', type: 'indicator_crossover', operator: 'cross_below', leftOperand: 'MACD', rightOperand: 'Signal', timeframe: '4h' },\n      ],\n      positionSizing: {\n        method: 'volatility_based',\n        maxPositionSize: 3,\n        maxPortfolioRisk: 1.5,\n        scalingRules: [],\n      },\n      riskManagement: {\n        stopLossType: 'trailing',\n        stopLossValue: 1.5,\n        takeProfitType: 'dynamic',\n        takeProfitValue: 0,\n        maxDailyLoss: 3,\n        maxConsecutiveLosses: 5,\n      },\n      indicators: [\n        { name: 'MACD', type: 'trend', parameters: { fast: 12, slow: 26, signal: 9 }, timeframe: '4h' },\n        { name: 'Bollinger Bands', type: 'volatility', parameters: { period: 20, stdDev: 2 }, timeframe: '4h' },\n      ],\n    },\n    generatedAt: '2024-01-15T11:45:00Z',\n    status: 'backtesting',\n  },\n];\n\nconst mockBacktestResults: BacktestResult[] = [\n  {\n    totalTrades: 142,\n    winningTrades: 97,\n    losingTrades: 45,\n    winRate: 68.3,\n    profitFactor: 2.3,\n    totalReturn: 42.5,\n    sharpeRatio: 1.8,\n    maxDrawdown: -12.4,\n    avgWin: 1.8,\n    avgLoss: -1.2,\n    expectancy: 0.92,\n    equityCurve: Array.from({ length: 30 }, (_, i) => ({\n      date: `Day ${i + 1}`,\n      equity: 10000 + i * 150,\n      drawdown: Math.max(0, -Math.random() * 15),\n    })),\n    tradeHistory: Array.from({ length: 10 }, (_, i) => ({\n      id: `trade-${i}`,\n      entryTime: `2024-01-${15 + i}T10:00:00`,\n      exitTime: `2024-01-${15 + i}T13:00:00`,\n      symbol: 'BTC/USDT',\n      direction: i % 2 === 0 ? 'long' : 'short',\n      entryPrice: 42000 + i * 100,\n      exitPrice: 42200 + i * 120,\n      pnl: i % 2 === 0 ? 200 : -150,\n      pnlPercent: i % 2 === 0 ? 0.48 : -0.36,\n      duration: '3h',\n    })),\n  },\n];\n\nconst strategyTypes = [\n  { value: 'mean_reversion', label: 'Mean Reversion' },\n  { value: 'momentum', label: 'Momentum' },\n  { value: 'breakout', label: 'Breakout' },\n  { value: 'arbitrage', label: 'Arbitrage' },\n  { value: 'ml_based', label: 'ML Based' },\n  { value: 'hybrid', label: 'Hybrid' },\n];\n\nconst markets = ['BTC/USDT', 'ETH/USDT', 'SPY', 'AAPL', 'EUR/USD', 'Gold'];\nconst timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];\n\n// Main Component\nexport default function AITradeStrategyGenerator() {\n  const [strategies, setStrategies] = useState<AIStrategy[]>(mockStrategies);\n  const [selectedStrategy, setSelectedStrategy] = useState<AIStrategy>(mockStrategies[0]);\n  const [generationParams, setGenerationParams] = useState<StrategyGenerationParams>({\n    market: 'BTC/USDT',\n    timeframe: '1h',\n    strategyTypes: ['mean_reversion', 'momentum'],\n    complexityRange: [5, 8],\n    riskTolerance: 'medium',\n    maxDrawdownLimit: 15,\n    minWinRate: 55,\n    dataPeriod: '1y',\n  });\n  const [isGenerating, setIsGenerating] = useState(false);\n  const [generationProgress, setGenerationProgress] = useState(0);\n  const [backtestResults, setBacktestResults] = useState<BacktestResult[]>(mockBacktestResults);\n  \n  // Handle strategy generation\n  const handleGenerateStrategy = () => {\n    setIsGenerating(true);\n    setGenerationProgress(0);\n    \n    // Simulate generation process\n    const interval = setInterval(() => {\n      setGenerationProgress((prev) => {\n        if (prev >= 100) {\n          clearInterval(interval);\n          setIsGenerating(false);\n          \n          // Add new generated strategy\n          const newStrategy: AIStrategy = {\n            id: Date.now().toString(),\n            name: `AI Strategy ${strategies.length + 1}`,\n            description: `AI-generated ${generationParams.strategyTypes.join('/')} strategy for ${generationParams.market}`,\n            type: generationParams.strategyTypes[0] as any,\n            complexity: Math.floor(Math.random() * 5) + 5,\n            winRate: 50 + Math.random() * 30,\n            profitFactor: 1.5 + Math.random() * 1.5,\n            sharpeRatio: 1 + Math.random() * 1.5,\n            maxDrawdown: -(5 + Math.random() * 15),\n            avgTradeDuration: `${Math.floor(Math.random() * 6) + 1}h ${Math.floor(Math.random() * 60)}m`,\n            signals: [],\n            riskMetrics: {\n              valueAtRisk95: -(1 + Math.random() * 4),\n              expectedShortfall: -(2 + Math.random() * 6),\n              sortinoRatio: 1 + Math.random() * 2,\n              calmarRatio: 0.5 + Math.random() * 1.5,\n              ulcerIndex: 3 + Math.random() * 7,\n              riskRewardRatio: 1.5 + Math.random() * 2,\n              probabilityOfProfit: 50 + Math.random() * 30,\n            },\n            configuration: {\n              entryConditions: [],\n              exitConditions: [],\n              positionSizing: {\n                method: 'fixed',\n                maxPositionSize: 5,\n                maxPortfolioRisk: 2,\n                scalingRules: [],\n              },\n              riskManagement: {\n                stopLossType: 'fixed',\n                stopLossValue: 2,\n                takeProfitType: 'risk_reward',\n                takeProfitValue: 3,\n                maxDailyLoss: 5,\n                maxConsecutiveLosses: 3,\n              },\n              indicators: [],\n            },\n            generatedAt: new Date().toISOString(),\n            status: 'ready',\n          };\n          \n          setStrategies(prev => [newStrategy, ...prev]);\n          setSelectedStrategy(newStrategy);\n          return 100;\n        }\n        return prev + 10;\n      });\n    }, 300);\n  };\n  \n  // Handle backtest\n  const handleRunBacktest = (strategyId: string) => {\n    const strategy = strategies.find(s => s.id === strategyId);\n    if (!strategy) return;\n    \n    // Update strategy status\n    setStrategies(prev => prev.map(s => \n      s.id === strategyId ? { ...s, status: 'backtesting' } : s\n    ));\n    \n    // Simulate backtest\n    setTimeout(() => {\n      setStrategies(prev => prev.map(s => \n        s.id === strategyId ? { ...s, status: 'ready' } : s\n      ));\n      \n      // Add backtest result\n      const newResult: BacktestResult = {\n        totalTrades: Math.floor(Math.random() * 200) + 50,\n        winningTrades: Math.floor(Math.random() * 150) + 30,\n        losingTrades: Math.floor(Math.random() * 100) + 20,\n        winRate: 40 + Math.random() * 40,\n        profitFactor: 1 + Math.random() * 2,\n        totalReturn: Math.random() * 50 - 10,\n        sharpeRatio: Math.random() * 2.5,\n        maxDrawdown: -(5 + Math.random() * 20),\n        avgWin: 1 + Math.random() * 2,\n        avgLoss: -(0.5 + Math.random() * 1.5),\n        expectancy: Math.random() * 1.5 - 0.5,\n        equityCurve: Array.from({ length: 30 }, (_, i) => ({\n          date: `Day ${i + 1}`,\n          equity: 10000 + i * (Math.random() * 200 - 50),\n          drawdown: Math.max(0, -(Math.random() * 20)),\n        })),\n        tradeHistory: [],\n      };\n      \n      setBacktestResults(prev => [newResult, ...prev]);\n    }, 2000);\n  };\n  \n  // Export strategy as JSON\n  const handleExportStrategy = (strategy: AIStrategy) => {\n    const jsonString = JSON.stringify(strategy, null, 2);\n    const blob = new Blob([jsonString], { type: 'application/json' });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement('a');\n    a.href = url;\n    a.download = `strategy-${strategy.name.toLowerCase().replace(/\\s+/g, '-')}.json`;\n    a.click();\n    URL.revokeObjectURL(url);\n  };\n  \n  // Get status color\n  const getStatusColor = (status: AIStrategy['status']) => {\n    switch (status) {\n      case 'ready': return 'bg-green-500';\n      case 'generating': return 'bg-yellow-500';\n      case 'backtesting': return 'bg-blue-500';\n      case 'optimizing': return 'bg-purple-500';\n      default: return 'bg-gray-500';\n    }\n  };\n  \n  // Get type color\n  const getTypeColor = (type: AIStrategy['type']) => {\n    switch (type) {\n      case 'mean_reversion': return 'bg-blue-500';\n      case 'momentum': return 'bg-green-500';\n      case 'breakout': return 'bg-purple-500';\n      case 'arbitrage': return 'bg-yellow-500';\n      case 'ml_based': return 'bg-pink-500';\n      case 'hybrid': return 'bg-indigo-500';\n      default: return 'bg-gray-500';\n    }\n  };\n  \n  return (\n    <div className=\"min-h-screen bg-gray-900 text-white p-6\">\n      <div className=\"max-w-7xl mx-auto\">\n        {/* Header */}\n        <div className=\"mb-8\">\n          <h1 className=\"text-3xl font-bold flex items-center gap-3\">\n            <Brain className=\"h-8 w-8 text-blue-400\" />\n            AI Trade Strategy Generator\n          </h1>\n          <p className=\"text-gray-400 mt-2\">\n            Generate, test, and optimize AI-powered trading strategies using machine learning\n          </p>\n        </div>\n        \n        <div className=\"grid grid-cols-1 lg:grid-cols-3 gap-6\">\n          {/* Left Column - Strategy Generation */}\n          <div className=\"lg:col-span-2 space-y-6\">\n            {/* Generation Parameters Card */}\n            <Card className=\"bg-gray-800 border-gray-700\">\n              <CardHeader>\n                <CardTitle className=\"flex items-center gap-2\">\n                  <Sparkles className=\"h-5 w-5 text-yellow-400\" />\n                  Strategy Generation Parameters\n                </CardTitle>\n                <CardDescription>\n                  Configure parameters for AI strategy generation\n                </CardDescription>\n              </CardHeader>\n              <CardContent>\n                <div className=\"grid grid-cols-1 md:grid-cols-2 gap-4\">\n                  <div className=\"space-y-2\">\n                    <Label>Market / Symbol</Label>\n                    <Select \n                      value={generationParams.market}\n                      onValueChange={(value) => setGenerationParams(prev => ({ ...prev, market: value }))}\n                    >\n                      <SelectTrigger className=\"bg-gray-700 border-gray-600\">\n                        <SelectValue />\n                      </SelectTrigger>\n                      <SelectContent className=\"bg-gray-800 border-gray-700\">\n                        {markets.map(market => (\n                          <SelectItem key={market} value={market}>{market}</SelectItem>\n                        ))}\n                      </SelectContent>\n                    </Select>\n                  </div>\n                  \n                  <div className=\"space-y-2\">\n                    <Label>Timeframe</Label>\n                    <Select \n                      value={generationParams.timeframe}\n                      onValueChange={(value) => setGenerationParams(prev => ({ ...prev, timeframe: value }))}\n                    >\n                      <SelectTrigger className=\"bg-gray-700 border-gray-600\">\n                        <SelectValue />\n                      </SelectTrigger>\n                      <SelectContent className=\"bg-gray-800 border-gray-700\">\n                        {timeframes.map(tf => (\n                          <SelectItem key={tf} value={tf}>{tf}</SelectItem>\n                        ))}\n                      </SelectContent>\n                    </Select>\n                  </div>\n                  \n                  <div className=\"space-y-2\">\n                    <Label>Strategy Types</Label>\n                    <div className=\"flex flex-wrap gap-2\">\n                      {strategyTypes.map(type => (\n                        <Button\n                          key={type.value}\n                          variant={generationParams.strategyTypes.includes(type.value) ? \"default\" : \"outline\"}\n                          size=\"sm\"\n                          onClick={() => {\n                            setGenerationParams(prev => ({\n                              ...prev,\n                              strategyTypes: prev.strategyTypes.includes(type.value)\n                                ? prev.strategyTypes.filter(t => t !== type.value)\n                                : [...prev.strategyTypes, type.value]\n                            }));\n                          }}\n                          className=\"bg-gray-700 hover:bg-gray-600\"\n                        >\n                          {type.label}\n                        </Button>\n                      ))}\n                    </div>\n                  </div>\n                  \n                  <div className=\"space-y-2\">\n                    <Label>Risk Tolerance</Label>\n                    <Select \n                      value={generationParams.riskTolerance}\n                      onValueChange={(value: 'low' | 'medium' | 'high') => \n                        setGenerationParams(prev => ({ ...prev, riskTolerance: value }))\n                      }\n                    >\n                      <SelectTrigger className=\"bg-gray-700 border-gray-600\">\n                        <SelectValue />\n                      </SelectTrigger>\n                      <SelectContent className=\"bg-gray-800 border-gray-700\">\n                        <SelectItem value=\"low\">Low Risk</SelectItem>\n                        <SelectItem value=\"medium\">Medium Risk</SelectItem>\n                        <SelectItem value=\"high\">High Risk</SelectItem>\n                      </SelectContent>\n                    </Select>\n                  </div>\n                  \n                  <div className=\"space-y-2\">\n                    <Label>Complexity Range: {generationParams.complexityRange[0]} - {generationParams.complexityRange[1]}</Label>\n                    <Slider \n                      value={generationParams.complexityRange}\n                      onValueChange={(value) => setGenerationParams(prev => ({ ...prev, complexityRange: value as [number, number] }))}\n                      min={1}\n                      max={10}\n                      step={1}\n                      className=\"w-full\"\n                    />\n                  </div>\n                  \n                  <div className=\"space-y-2\">\n                    <Label>Minimum Win Rate: {generationParams.minWinRate}%</Label>\n                    <Slider \n                      value={[generationParams.minWinRate]}\n                      onValueChange={(value) => setGenerationParams(prev => ({ ...prev, minWinRate: value[0] }))}\n                      min={30}\n                      max={90}\n                      step={5}\n                      className=\"w-full\"\n                    />\n                  </div>\n                </div>\n                \n                <div className=\"mt-6 flex justify-between items-center\">\n                  <div className=\"flex items-center gap-2\">\n                    <Switch \n                      checked={generationParams.maxDrawdownLimit < 20}\n                      onCheckedChange={(checked) => \n                        setGenerationParams(prev => ({ ...prev, maxDrawdownLimit: checked ? 15 : 30 }))\n                      }\n                    />\n                    <Label>Strict Drawdown Control</Label>\n                  </div>\n                  \n                  <Button \n                    onClick={handleGenerateStrategy}\n                    disabled={isGenerating}\n                    className=\"bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700\"\n                  >\n                    {isGenerating ? (\n                      <>\n                        <RefreshCw className=\"h-4 w-4 animate-spin mr-2\" />\n                        Generating...\n                      </>\n                    ) : (\n                      <>\n                        <Sparkles className=\"h-4 w-4 mr-2\" />\n                        Generate Strategy\n                      </>\n                    )}\n                  </Button>\n                </div>\n                \n                {isGenerating && (\n                  <div className=\"mt-4\">\n                    <div className=\"flex justify-between text-sm text-gray-400 mb-1\">\n                      <span>Generating strategy...</span>\n                      <span>{generationProgress}%</span>\n                    </div>\n                    <Progress value={generationProgress} className=\"h-2\" />\n                  </div>\n                )}\n              </CardContent>\n            </Card>\n            \n            {/* Generated Strategies List */}\n            <Card className=\"bg-gray-800 border-gray-700\">\n              <CardHeader>\n                <CardTitle className=\"flex items-center gap-2\">\n                  <Code className=\"h-5 w-5 text-green-400\" />\n                  Generated Strategies\n                </CardTitle>\n                <CardDescription>\n                  AI-generated trading strategies ready for testing\n                </CardDescription>\n              </CardHeader>\n              <CardContent>\n                <div className=\"space-y-4\">\n                  {strategies.map(strategy => (\n                    <div \n                      key={strategy.id}\n                      className={`p-4 rounded-lg border cursor-pointer transition-all hover:bg-gray-750 ${\n                        selectedStrategy.id === strategy.id ? 'bg-gray-750 border-blue-500' : 'bg-gray-800 border-gray-700'\n                      }`}\n                      onClick={() => setSelectedStrategy(strategy)}\n                    >\n                      <div className=\"flex justify-between
+'use client';
+
+import React, { useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { 
+  Search, 
+  Filter, 
+  Download, 
+  Play, 
+  Pause, 
+  RefreshCw, 
+  BarChart3, 
+  TrendingUp, 
+  Cpu, 
+  Zap, 
+  Shield, 
+  AlertTriangle,
+  ChevronRight,
+  ChevronLeft,
+  Activity,
+  Globe,
+  Layers,
+  AlertCircle,
+  Target,
+  PieChart as PieChartIcon,
+  Network,
+  TrendingDown,
+  MessageSquare,
+  Bell,
+  Users,
+  BarChart2,
+  Settings,
+  User,
+  LogOut
+} from 'lucide-react';
+
+// Mock data for charts
+const chartData = [
+  { time: '09:30', price: 45000 },
+  { time: '10:00', price: 45200 },
+  { time: '10:30', price: 45100 },
+  { time: '11:00', price: 45300 },
+  { time: '11:30', price: 45500 },
+  { time: '12:00', price: 45400 },
+  { time: '12:30', price: 45600 },
+  { time: '13:00', price: 45700 },
+  { time: '13:30', price: 45800 },
+  { time: '14:00', price: 45900 },
+];
+
+const instruments = [
+  { symbol: 'BTC/USDT', price: '45,890.12', change: '+2.34%', volume: '1.2B' },
+  { symbol: 'ETH/USDT', price: '2,450.67', change: '+1.23%', volume: '850M' },
+  { symbol: 'SOL/USDT', price: '98.45', change: '+5.67%', volume: '320M' },
+  { symbol: 'XRP/USDT', price: '0.5678', change: '-0.45%', volume: '450M' },
+  { symbol: 'ADA/USDT', price: '0.4321', change: '+0.89%', volume: '210M' },
+  { symbol: 'DOT/USDT', price: '6.78', change: '+3.21%', volume: '180M' },
+  { symbol: 'LINK/USDT', price: '14.56', change: '-1.23%', volume: '95M' },
+  { symbol: 'AVAX/USDT', price: '34.21', change: '+4.56%', volume: '120M' },
+];
+
+type TimeFrame = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
+
+export default function Home() {
+  const [selectedInstrument, setSelectedInstrument] = useState('BTC/USDT');
+  const [timeFrame, setTimeFrame] = useState<TimeFrame>('1h');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const filteredInstruments = instruments.filter(instrument =>
+    instrument.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  
+  const timeFrames: TimeFrame[] = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
+  
+  return (
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-900/60">
+        <div className="flex h-16 items-center justify-between px-6">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
+                <Cpu className="h-5 w-5" />
+              </div>
+              <span className="text-xl font-bold tracking-tight">AI Trading Platform</span>
+            </div>
+            
+            <div className="hidden md:flex items-center gap-2 ml-8">
+              <Badge variant="outline" className="border-green-500/30 text-green-400">
+                <div className="h-2 w-2 rounded-full bg-green-500 mr-2"></div>
+                Live
+              </Badge>
+              <span className="text-sm text-gray-400">Demo Mode</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-4">
+              <Button variant="ghost" size="icon">
+                <Bell className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon">
+                <User className="h-5 w-5" />
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" className="hidden md:flex">
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+      
+      <div className="flex">
+        {/* Sidebar */}
+        <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} transition-all duration-300 border-r border-gray-800 bg-gray-900`}>
+          <div className="flex flex-col h-[calc(100vh-4rem)]">
+            {/* Sidebar Toggle */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-800">
+              {!isSidebarCollapsed && (
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search instruments..."
+                    className="bg-gray-800 border-gray-700 text-sm h-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              >
+                {isSidebarCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronLeft className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            
+            {/* Instruments List */}
+            <div className="flex-1 overflow-y-auto p-2">
+              {!isSidebarCollapsed && (
+                <div className="space-y-1">
+                  <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Markets
+                  </div>
+                  {filteredInstruments.map((instrument) => (
+                    <button
+                      key={instrument.symbol}
+                      className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
+                        selectedInstrument === instrument.symbol
+                          ? 'bg-gray-800'
+                          : 'hover:bg-gray-800/50'
+                      }`}
+                      onClick={() => setSelectedInstrument(instrument.symbol)}
+                    >
+                      <div className="text-left">
+                        <div className="font-medium">{instrument.symbol}</div>
+                        <div className="text-sm text-gray-400">${instrument.price}</div>
+                      </div>
+                      <div className={`text-sm font-medium ${
+                        instrument.change.startsWith('+') ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {instrument.change}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              {/* Collapsed Sidebar Icons */}
+              {isSidebarCollapsed && (
+                <div className="space-y-2">
+                  {instruments.slice(0, 6).map((instrument) => (
+                    <button
+                      key={instrument.symbol}
+                      className="w-full p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                      title={instrument.symbol}
+                      onClick={() => setSelectedInstrument(instrument.symbol)}
+                    >
+                      <div className="text-xs font-medium truncate">
+                        {instrument.symbol.split('/')[0]}
+                      </div>
+                      <div className={`text-xs ${
+                        instrument.change.startsWith('+') ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {instrument.change}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Sidebar Footer */}
+            <div className="border-t border-gray-800 p-4">
+              {!isSidebarCollapsed && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-400">AI Confidence</span>
+                    <span className="text-sm font-medium text-green-400">87%</span>
+                  </div>
+                  <Progress value={87} className="h-2 bg-gray-800" />
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <Activity className="h-4 w-4" />
+                    <span>24h Volume: $4.2B</span>
+                  </div>
+                </div>
+              )}
+              {isSidebarCollapsed && (
+                <div className="flex flex-col items-center gap-2">
+                  <Activity className="h-5 w-5 text-green-400" />
+                  <span className="text-xs text-green-400">87%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
+        
+        {/* Main Content */}
+        <main className="flex-1">
+          <div className="p-6">
+            {/* Chart Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold">{selectedInstrument}</h1>
+                  <Badge variant="secondary" className="bg-green-500/10 text-green-400">
+                    <TrendingUp className="h-3 w-3 mr-1" />
+                    Bullish
+                  </Badge>
+                  <span className="text-xl font-bold text-green-400">$45,890.12</span>
+                  <span className="text-sm text-green-400">(+2.34%)</span>
+                </div>
+                <p className="text-gray-400 mt-1">Bitcoin / Tether • 24h High: $46,200 • Low: $44,800</p>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-gray-700 bg-gray-800 p-1">
+                  {timeFrames.map((tf) => (
+                    <Button
+                      key={tf}
+                      variant={timeFrame === tf ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className={`h-8 px-3 ${
+                        timeFrame === tf ? 'bg-gray-700' : ''
+                      }`}
+                      onClick={() => setTimeFrame(tf)}
+                    >
+                      {tf}
+                    </Button>
+                  ))}
+                </div>
+                
+                <Button variant="outline" size="icon">
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon">
+                  <Download className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon">
+                  <Filter className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            
+            {/* Chart Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <Card className="bg-gray-800 border-gray-700">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Price Chart</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="ghost">
+                          <Play className="h-4 w-4 mr-2" />
+                          Live
+                        </Button>
+                        <Button size="sm" variant="ghost">
+                          <Pause className="h-4 w-4 mr-2" />
+                          Pause
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis 
+                            dataKey="time" 
+                            stroke="#9CA3AF"
+                            fontSize={12}
+                          />
+                          <YAxis 
+                            stroke="#9CA3AF"
+                            fontSize={12}
+                            domain={['dataMin - 100', 'dataMax + 100']}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1F2937', 
+                              borderColor: '#374151',
+                              color: 'white'
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="price" 
+                            stroke="#3B82F6" 
+                            strokeWidth={2}
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              
+              {/* Right Panel */}
+              <div className="space-y-6">
+                <Card className="bg-gray-800 border-gray-700">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Cpu className="h-5 w-5 text-blue-400" />
+                      AI Signals
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Buy Signal</span>
+                        <Badge className="bg-green-500/10 text-green-400">Strong</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Risk Level</span>
+                        <Badge className="bg-yellow-500/10 text-yellow-400">Medium</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">Confidence</span>
+                        <span className="text-sm font-medium text-green-400">87%</span>
+                      </div>
+                    </div>
+                    
+                    <div className="pt-4 border-t border-gray-700">
+                      <h4 className="text-sm font-medium mb-2">Recommended Actions</h4>
+                      <div className="space-y-2">
+                        <Button className="w-full bg-green-600 hover:bg-green-700">
+                          Buy Limit @ $45,500
+                        </Button>
+                        <Button variant="outline" className="w-full border-red-500 text-red-400 hover:bg-red-500/10">
+                          Sell Limit @ $46,500
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="bg-gray-800 border-gray-700">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-purple-400" />
+                      Market Stats
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-400">24h Volume</span>
+                      <span className="font-medium">$1.2B</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-400">Market Cap</span>
+                      <span className="font-medium">$890B</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-400">Bid/Ask</span>
+                      <span className="font-medium">45,889/45,891</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-400">Spread</span>
+                      <span className="font-medium text-yellow-400">0.004%</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+            
+            {/* Bottom Tabs */}
+            <div className="mt-6">
+              <Tabs defaultValue="orders" className="w-full">
+                <TabsList className="bg-gray-800 border border-gray-700">
+                  <TabsTrigger value="orders" className="data-[state=active]:bg-gray-700">
+                    Orders
+                  </TabsTrigger>
+                  <TabsTrigger value="positions" className="data-[state=active]:bg-gray-700">
+                    Positions
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="data-[state=active]:bg-gray-700">
+                    History
+                  </TabsTrigger>
+                  <TabsTrigger value="logs" className="data-[state=active]:bg-gray-700">
+                    AI Logs
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="orders" className="mt-4">
+                  <Card className="bg-gray-800 border-gray-700">
+                    <CardContent className="p-6">
+                      <div className="text-center text-gray-400 py-8">
+                        <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-600" />
+                        <p>No active orders. Place your first trade!</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                
+                <TabsContent value="positions" className="mt-4">
+                  <Card className="bg-gray-800 border-gray-700">
+                    <CardContent className="p-6">
+                      <div className="text-center text-gray-400 py-8">
+                        <TrendingUp className="h-12 w-12 mx-auto mb-4 text-gray-600" />
+                        <p>No open positions.</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
