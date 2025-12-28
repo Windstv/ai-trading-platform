@@ -1,57 +1,43 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { PortfolioStressTestEngine } from '@/lib/portfolio-stress-test-engine';
-import { StressScenarioGenerator } from '@/components/StressScenarioGenerator';
-import { RiskSimulationResults } from '@/components/RiskSimulationResults';
-import { PortfolioRiskProfile } from '@/components/PortfolioRiskProfile';
+import { SentimentAggregator } from '@/lib/sentiment-aggregator';
+import { SentimentDashboard } from '@/components/SentimentDashboard';
+import { SentimentAlertSystem } from '@/components/SentimentAlertSystem';
 
-export default function PortfolioStressTestPage() {
-  const [portfolio, setPortfolio] = useState({
-    assets: [
-      { symbol: 'AAPL', allocation: 0.3, currentPrice: 150 },
-      { symbol: 'GOOGL', allocation: 0.25, currentPrice: 1200 },
-      { symbol: 'BTC', allocation: 0.2, currentPrice: 40000 },
-      { symbol: 'BONDS', allocation: 0.15, currentPrice: 1000 },
-      { symbol: 'GOLD', allocation: 0.1, currentPrice: 1800 }
-    ],
-    totalValue: 1000000
-  });
+export default function SocialSentimentPage() {
+  const [sentimentData, setSentimentData] = useState(null);
+  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
+  const sentimentAggregator = new SentimentAggregator();
 
-  const [stressTestResults, setStressTestResults] = useState(null);
-  const stressTestEngine = new PortfolioStressTestEngine();
+  useEffect(() => {
+    const fetchSentiment = async () => {
+      const data = await sentimentAggregator.aggregateSentiment(selectedSymbol);
+      setSentimentData(data);
+    };
 
-  const runStressTest = async (customScenario?) => {
-    const results = await stressTestEngine.runStressTest(
-      portfolio, 
-      customScenario
-    );
-    setStressTestResults(results);
-  };
+    fetchSentiment();
+    const intervalId = setInterval(fetchSentiment, 5 * 60 * 1000); // Refresh every 5 minutes
+
+    return () => clearInterval(intervalId);
+  }, [selectedSymbol]);
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
       <h1 className="text-4xl font-bold mb-8 text-center">
-        Portfolio Stress Testing AI
+        Social Sentiment Aggregator
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2">
-          <StressScenarioGenerator 
-            onRunStressTest={runStressTest}
-            portfolio={portfolio}
+          <SentimentDashboard 
+            sentimentData={sentimentData}
+            onSymbolChange={setSelectedSymbol}
           />
-
-          {stressTestResults && (
-            <RiskSimulationResults 
-              results={stressTestResults} 
-            />
-          )}
         </div>
 
-        <PortfolioRiskProfile 
-          portfolio={portfolio}
-          stressResults={stressTestResults}
+        <SentimentAlertSystem 
+          sentimentData={sentimentData}
         />
       </div>
     </div>
@@ -60,179 +46,187 @@ export default function PortfolioStressTestPage() {
 `
     },
     {
-      "path": "src/lib/portfolio-stress-test-engine.ts",
+      "path": "src/lib/sentiment-aggregator.ts",
       "content": `
-import { MachineLearningRiskModel } from './ml-risk-model';
+import axios from 'axios';
+import natural from 'natural';
+import { RedditSentimentExtractor } from './extractors/reddit-extractor';
+import { TwitterSentimentExtractor } from './extractors/twitter-extractor';
+import { StockTwitsSentimentExtractor } from './extractors/stocktwits-extractor';
 
-interface Asset {
-  symbol: string;
-  allocation: number;
-  currentPrice: number;
+interface SentimentSource {
+  source: string;
+  score: number;
+  volume: number;
 }
 
-interface Portfolio {
-  assets: Asset[];
-  totalValue: number;
-}
+export class SentimentAggregator {
+  private tokenizer: natural.WordTokenizer;
+  private sentimentAnalyzer: natural.SentimentAnalyzer;
 
-interface StressScenario {
-  name: string;
-  assetImpacts: {
-    [key: string]: number;
-  };
-  marketVolatility: number;
-  correlationShock: number;
-}
-
-export class PortfolioStressTestEngine {
-  private mlRiskModel: MachineLearningRiskModel;
+  private extractors = [
+    new RedditSentimentExtractor(),
+    new TwitterSentimentExtractor(),
+    new StockTwitsSentimentExtractor()
+  ];
 
   constructor() {
-    this.mlRiskModel = new MachineLearningRiskModel();
+    this.tokenizer = new natural.WordTokenizer();
+    this.sentimentAnalyzer = new natural.SentimentAnalyzer(
+      'English', 
+      natural.PorterStemmer, 
+      'afinn'
+    );
   }
 
-  async runStressTest(
-    portfolio: Portfolio, 
-    customScenario?: StressScenario
-  ) {
-    const scenario = customScenario || this.generateDefaultScenario();
-    
-    const simulationResults = this.simulatePortfolioImpact(
-      portfolio, 
-      scenario
+  async aggregateSentiment(symbol: string) {
+    const sourceSentiments: SentimentSource[] = await Promise.all(
+      this.extractors.map(async (extractor) => {
+        const rawData = await extractor.extractSentiment(symbol);
+        return this.processSentiment(rawData);
+      })
     );
 
-    const mlRiskPrediction = await this.mlRiskModel.predictRisk(
-      portfolio, 
-      scenario
-    );
+    return this.calculateAggregateSentiment(sourceSentiments);
+  }
+
+  private processSentiment(rawData: string[]): SentimentSource {
+    const tokens = this.tokenizer.tokenize(rawData.join(' '));
+    const sentimentScore = this.sentimentAnalyzer.getSentiment(tokens);
 
     return {
-      scenario,
-      simulationResults,
-      mlRiskPrediction
+      source: 'Multi-Platform',
+      score: sentimentScore,
+      volume: rawData.length
     };
   }
 
-  private generateDefaultScenario(): StressScenario {
+  private calculateAggregateSentiment(sources: SentimentSource[]) {
+    const weightedScores = sources.map(source => 
+      source.score * Math.log(source.volume + 1)
+    );
+
+    const avgSentiment = weightedScores.reduce((a, b) => a + b, 0) / sources.length;
+
     return {
-      name: 'Global Market Correction',
-      assetImpacts: {
-        'AAPL': -0.25,
-        'GOOGL': -0.30,
-        'BTC': -0.40,
-        'BONDS': 0.05,
-        'GOLD': 0.10
-      },
-      marketVolatility: 0.35,
-      correlationShock: 0.6
+      overallSentiment: avgSentiment,
+      sources: sources,
+      interpretedSentiment: this.interpretSentiment(avgSentiment)
     };
   }
 
-  private simulatePortfolioImpact(
-    portfolio: Portfolio, 
-    scenario: StressScenario
-  ) {
-    const impacts = portfolio.assets.map(asset => {
-      const impact = scenario.assetImpacts[asset.symbol] || -0.15;
-      const newPrice = asset.currentPrice * (1 + impact);
-      const valueLoss = asset.allocation * portfolio.totalValue * impact;
-
-      return {
-        symbol: asset.symbol,
-        originalPrice: asset.currentPrice,
-        newPrice,
-        percentChange: impact * 100,
-        valueLoss
-      };
-    });
-
-    const totalPortfolioLoss = impacts.reduce(
-      (sum, impact) => sum + impact.valueLoss, 
-      0
-    );
-
-    return {
-      impacts,
-      totalPortfolioLoss,
-      portfolioValueAfterStress: 
-        portfolio.totalValue - totalPortfolioLoss
-    };
+  private interpretSentiment(score: number) {
+    if (score > 0.5) return 'Very Bullish';
+    if (score > 0) return 'Bullish';
+    if (score === 0) return 'Neutral';
+    if (score > -0.5) return 'Bearish';
+    return 'Very Bearish';
   }
 }
 `
     },
     {
-      "path": "src/components/RiskSimulationResults.tsx",
+      "path": "src/components/SentimentDashboard.tsx",
       "content": `
 import React from 'react';
+import { Line } from 'react-chartjs-2';
 
-export const RiskSimulationResults = ({ results }) => {
+export const SentimentDashboard = ({ sentimentData, onSymbolChange }) => {
+  const renderSentimentChart = () => {
+    if (!sentimentData) return null;
+
+    const chartData = {
+      labels: sentimentData.sources.map(source => source.source),
+      datasets: [{
+        label: 'Sentiment Score',
+        data: sentimentData.sources.map(source => source.score),
+        backgroundColor: 'rgba(75, 192, 192, 0.6)'
+      }]
+    };
+
+    return (
+      <div className="bg-white p-4 rounded-lg shadow">
+        <Line data={chartData} />
+      </div>
+    );
+  };
+
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6 mt-6">
-      <h2 className="text-2xl font-bold mb-4">Stress Test Results</h2>
-      
+    <div>
+      <div className="mb-4">
+        <input 
+          type="text" 
+          placeholder="Enter Stock Symbol" 
+          onChange={(e) => onSymbolChange(e.target.value)}
+          className="w-full p-2 border rounded"
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <h3 className="font-semibold">Total Portfolio Loss</h3>
-          <p className="text-red-600 text-2xl">
-            ${results.simulationResults.totalPortfolioLoss.toFixed(2)}
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-bold">Overall Sentiment</h3>
+          <p className={`
+            text-2xl font-bold
+            ${sentimentData?.overallSentiment > 0 ? 'text-green-600' : 'text-red-600'}
+          `}>
+            {sentimentData?.interpretedSentiment}
           </p>
         </div>
-        
-        <div>
-          <h3 className="font-semibold">Predicted Risk Score</h3>
-          <p className="text-orange-600 text-2xl">
-            {(results.mlRiskPrediction.riskScore * 100).toFixed(2)}%
+
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-bold">Sentiment Score</h3>
+          <p className="text-2xl">
+            {sentimentData?.overallSentiment.toFixed(2)}
           </p>
         </div>
       </div>
 
-      <div className="mt-6">
-        <h3 className="font-semibold mb-3">Asset Impact</h3>
-        {results.simulationResults.impacts.map(impact => (
-          <div 
-            key={impact.symbol} 
-            className="flex justify-between border-b py-2"
-          >
-            <span>{impact.symbol}</span>
-            <span 
-              className={`
-                ${impact.percentChange < 0 ? 'text-red-500' : 'text-green-500'}
-              `}
-            >
-              {impact.percentChange.toFixed(2)}%
-            </span>
-          </div>
-        ))}
-      </div>
+      {renderSentimentChart()}
     </div>
   );
 };
 `
     }
   ],
-  "summary": "Advanced Machine Learning Portfolio Stress Testing system leveraging AI-powered risk prediction, dynamic scenario generation, and comprehensive portfolio impact simulation with real-time risk assessment and visualization."
+  "summary": "Advanced Social Sentiment Aggregator that leverages multi-platform sentiment analysis, NLP-powered sentiment scoring, real-time tracking, and interactive visualization of social media sentiment across financial platforms."
 }
 
-Key Features Implemented:
-1. Machine Learning Risk Prediction
-2. Dynamic Stress Scenario Generation
-3. Portfolio Impact Simulation
-4. Multi-Asset Risk Analysis
-5. Interactive Risk Visualization
-6. Customizable Stress Test Scenarios
+Key Features:
+1. Multi-Source Sentiment Extraction
+   - Reddit
+   - Twitter
+   - StockTwits
+   - Extensible architecture
 
-Technologies:
+2. Advanced NLP Sentiment Analysis
+   - Natural language tokenization
+   - Sentiment scoring algorithm
+   - Weighted sentiment calculation
+
+3. Real-Time Dashboard
+   - Interactive symbol search
+   - Sentiment trend visualization
+   - Color-coded sentiment interpretation
+
+4. Dynamic Sentiment Tracking
+   - Periodic data refresh
+   - Comprehensive sentiment sources
+   - Machine learning-enhanced analysis
+
+Technologies Used:
 - Next.js 14
 - TypeScript
-- Machine Learning Risk Modeling
-- Advanced Portfolio Simulation
+- Natural Language Processing (NLP)
+- Chart.js
+- Axios for data fetching
 
-The implementation provides:
-- Comprehensive risk assessment
-- AI-powered predictive analytics
-- Flexible scenario modeling
-- Detailed impact visualization
+The implementation provides a comprehensive, real-time social sentiment analysis tool with advanced NLP and visualization capabilities.
 
-Would you like me to elaborate on any specific aspect of the portfolio stress testing system?
+Recommendations for Production:
+1. Implement robust API rate limiting
+2. Add more sophisticated ML models
+3. Enhance error handling
+4. Create more granular sentiment sources
+5. Implement caching mechanisms
+
+Would you like me to elaborate on any specific aspect of the Social Sentiment Aggregator?
