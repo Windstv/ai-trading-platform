@@ -2,77 +2,97 @@
 
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { ComplianceStatus, RegulatoryAlert, KYCDocument } from '@/types/compliance';
+import { 
+  AssetCorrelation, 
+  MarketNetwork, 
+  SystemicRiskScore, 
+  GeopoliticalRiskData 
+} from '@/types/systemic-risk';
 
-// Dynamic imports for code splitting
-const ComplianceStatusWidget = dynamic(() => import('@/components/compliance/ComplianceStatusWidget'), { ssr: false });
-const RegulatoryAlertPanel = dynamic(() => import('@/components/compliance/RegulatoryAlertPanel'), { ssr: false });
-const DocumentVault = dynamic(() => import('@/components/compliance/DocumentVault'), { ssr: false });
-const RiskScoreChart = dynamic(() => import('@/components/compliance/RiskScoreChart'), { ssr: false });
+// Dynamic imports for performance optimization
+const CorrelationHeatmap = dynamic(() => import('@/components/systemic-risk/CorrelationHeatmap'), { ssr: false });
+const MarketNetworkGraph = dynamic(() => import('@/components/systemic-risk/MarketNetworkGraph'), { ssr: false });
+const RiskScoreIndicator = dynamic(() => import('@/components/systemic-risk/RiskScoreIndicator'), { ssr: false });
+const GeopoliticalRiskPanel = dynamic(() => import('@/components/systemic-risk/GeopoliticalRiskPanel'), { ssr: false });
 
-export default function RegulatoryComplianceDashboard() {
-  const [complianceStatus, setComplianceStatus] = useState<ComplianceStatus>({
-    overall: 'green',
-    jurisdictions: {
-      'US': 'green',
-      'EU': 'yellow',
-      'Russia': 'red'
-    }
+export default function SystemicRiskMonitor() {
+  const [correlationData, setCorrelationData] = useState<AssetCorrelation[]>([]);
+  const [marketNetwork, setMarketNetwork] = useState<MarketNetwork>({
+    nodes: [],
+    edges: []
   });
+  const [systemicRiskScore, setSystemicRiskScore] = useState<SystemicRiskScore>({
+    currentScore: 0,
+    historicalTrend: []
+  });
+  const [geopoliticalRisks, setGeopoliticalRisks] = useState<GeopoliticalRiskData[]>([]);
 
-  const [alerts, setAlerts] = useState<RegulatoryAlert[]>([]);
-  const [kycDocuments, setKycDocuments] = useState<KYCDocument[]>([]);
-  const [riskScore, setRiskScore] = useState<number>(0);
-
-  // Fetch compliance data
   useEffect(() => {
-    const fetchComplianceData = async () => {
+    const fetchSystemicRiskData = async () => {
       try {
-        const [statusResponse, alertsResponse, documentsResponse] = await Promise.all([
-          fetch('/api/compliance/status'),
-          fetch('/api/compliance/alerts'),
-          fetch('/api/compliance/documents')
+        const [
+          correlationResponse,
+          networkResponse,
+          riskScoreResponse,
+          geopoliticalResponse
+        ] = await Promise.all([
+          fetch('/api/systemic-risk/correlations'),
+          fetch('/api/systemic-risk/market-network'),
+          fetch('/api/systemic-risk/score'),
+          fetch('/api/systemic-risk/geopolitical')
         ]);
 
-        const statusData = await statusResponse.json();
-        const alertsData = await alertsResponse.json();
-        const documentsData = await documentsResponse.json();
+        const correlationData = await correlationResponse.json();
+        const networkData = await networkResponse.json();
+        const riskScoreData = await riskScoreResponse.json();
+        const geopoliticalData = await geopoliticalResponse.json();
 
-        setComplianceStatus(statusData);
-        setAlerts(alertsData);
-        setKycDocuments(documentsData);
-        calculateRiskScore(statusData, alertsData);
+        setCorrelationData(correlationData);
+        setMarketNetwork(networkData);
+        setSystemicRiskScore(riskScoreData);
+        setGeopoliticalRisks(geopoliticalData);
+
+        calculateCompositRiskScore(correlationData, networkData, riskScoreData);
       } catch (error) {
-        console.error('Failed to fetch compliance data', error);
+        console.error('Failed to fetch systemic risk data', error);
       }
     };
 
-    fetchComplianceData();
-    const intervalId = setInterval(fetchComplianceData, 5 * 60 * 1000); // Refresh every 5 minutes
+    fetchSystemicRiskData();
+    const intervalId = setInterval(fetchSystemicRiskData, 10 * 60 * 1000); // Refresh every 10 minutes
     return () => clearInterval(intervalId);
   }, []);
 
-  const calculateRiskScore = (status: ComplianceStatus, alerts: RegulatoryAlert[]) => {
-    // Advanced risk scoring algorithm
-    const jurisdictionRisks = Object.values(status.jurisdictions).map(score => 
-      score === 'red' ? 3 : score === 'yellow' ? 2 : 1
+  const calculateCompositRiskScore = (
+    correlations: AssetCorrelation[], 
+    network: MarketNetwork, 
+    riskScore: SystemicRiskScore
+  ) => {
+    // Advanced composite risk scoring algorithm
+    const correlationRisk = correlations.reduce((acc, corr) => acc + Math.abs(corr.correlation), 0);
+    const networkComplexity = network.edges.length / (network.nodes.length || 1);
+    const historicalVolatility = riskScore.historicalTrend.slice(-5).reduce((a, b) => a + b, 0) / 5;
+
+    const compositScore = (
+      correlationRisk * 0.4 + 
+      networkComplexity * 0.3 + 
+      historicalVolatility * 0.3
     );
-    
-    const alertRisks = alerts.reduce((total, alert) => total + (alert.severity || 0), 0);
-    
-    const calculatedScore = (jurisdictionRisks.reduce((a, b) => a + b, 0) + alertRisks) / (jurisdictionRisks.length + alerts.length);
-    setRiskScore(Math.min(calculatedScore * 20, 100)); // Normalize to 0-100
+
+    setSystemicRiskScore(prev => ({
+      ...prev,
+      compositScore: Math.min(compositScore, 100)
+    }));
   };
 
-  const handleReportGeneration = () => {
-    // Generate comprehensive regulatory report
-    fetch('/api/compliance/generate-report', { method: 'POST' })
+  const generateRiskReport = () => {
+    fetch('/api/systemic-risk/generate-report', { method: 'POST' })
       .then(response => response.blob())
       .then(blob => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `compliance_report_${new Date().toISOString()}.pdf`;
+        a.download = `systemic_risk_report_${new Date().toISOString()}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -81,106 +101,127 @@ export default function RegulatoryComplianceDashboard() {
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-6">Regulatory Compliance Dashboard</h1>
+      <h1 className="text-4xl font-bold mb-6">Cross-Asset Systemic Risk Monitor</h1>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <ComplianceStatusWidget 
-          status={complianceStatus} 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <RiskScoreIndicator 
+          score={systemicRiskScore.currentScore} 
+          compositScore={systemicRiskScore.compositScore}
         />
         
-        <RiskScoreChart 
-          score={riskScore} 
+        <CorrelationHeatmap 
+          correlations={correlationData} 
+        />
+        
+        <GeopoliticalRiskPanel 
+          risks={geopoliticalRisks} 
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <MarketNetworkGraph 
+          network={marketNetwork} 
         />
         
         <div className="bg-white shadow-md rounded-lg p-4">
           <button 
-            onClick={handleReportGeneration}
+            onClick={generateRiskReport}
             className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
           >
-            Generate Regulatory Report
+            Generate Systemic Risk Report
           </button>
         </div>
       </div>
-
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-        <RegulatoryAlertPanel 
-          alerts={alerts} 
-        />
-        
-        <DocumentVault 
-          documents={kycDocuments}
-        />
-      </div>
     </div>
   );
-}`
+}
+`
     },
     {
-      "path": "src/types/compliance.ts",
-      "content": `export interface ComplianceStatus {
-  overall: 'green' | 'yellow' | 'red';
-  jurisdictions: {
-    [key: string]: 'green' | 'yellow' | 'red'
-  };
-}
-
-export interface RegulatoryAlert {
-  id: string;
-  type: 'KYC' | 'AML' | 'Fraud' | 'Transaction';
-  severity: number;
-  description: string;
-  jurisdiction: string;
+      "path": "src/types/systemic-risk.ts",
+      "content": `export interface AssetCorrelation {
+  assets: string[];
+  correlation: number;
   timestamp: Date;
 }
 
-export interface KYCDocument {
-  id: string;
-  type: 'Passport' | 'Drivers License' | 'Utility Bill';
-  status: 'Verified' | 'Pending' | 'Rejected';
-  uploadDate: Date;
-  expirationDate?: Date;
+export interface MarketNetwork {
+  nodes: {
+    id: string;
+    type: 'equity' | 'bond' | 'commodity' | 'currency';
+    risk: number;
+  }[];
+  edges: {
+    source: string;
+    target: string;
+    strength: number;
+  }[];
 }
 
-export interface ComplianceReport {
+export interface SystemicRiskScore {
+  currentScore: number;
+  compositScore?: number;
+  historicalTrend: number[];
+  timestamp?: Date;
+}
+
+export interface GeopoliticalRiskData {
+  region: string;
+  tension: number;
+  economicImpact: number;
+  probabilityOfEscalation: number;
+  timestamp: Date;
+}
+
+export interface TailRiskProbability {
+  scenario: string;
+  probability: number;
+  potentialImpact: number;
+}
+
+export interface SystemicRiskReport {
   generatedAt: Date;
-  jurisdictions: string[];
-  riskScore: number;
-  alerts: RegulatoryAlert[];
-  documentsStatus: {
-    total: number;
-    verified: number;
-    pending: number;
-    rejected: number;
-  };
+  overallRiskScore: number;
+  correlationAnalysis: AssetCorrelation[];
+  networkComplexity: number;
+  tailRiskScenarios: TailRiskProbability[];
+  geopoliticalRisks: GeopoliticalRiskData[];
 }`
     }
   ],
-  "summary": "A comprehensive Regulatory Compliance Dashboard with real-time tracking of compliance status across multiple jurisdictions, automated KYC/AML checks, risk scoring, and reporting capabilities."
+  "summary": "A sophisticated Cross-Asset Systemic Risk Monitoring system that provides real-time analysis of market interconnectedness, risk scoring, and comprehensive risk reporting across multiple financial dimensions."
 }
 
-This implementation provides:
+Key Features of the Systemic Risk Monitor:
 
-1. Multi-jurisdictional compliance tracking
-2. Real-time status updates
-3. Dynamic risk scoring algorithm
-4. Regulatory alert management
-5. Document vault for KYC documents
-6. Automated report generation
-7. Responsive design with grid layout
+1. Multi-Asset Correlation Analysis
+   - Heatmap visualization of asset correlations
+   - Real-time correlation tracking
 
-Key Components:
-- ComplianceStatusWidget: Displays overall and per-jurisdiction compliance status
-- RiskScoreChart: Visualizes computed risk score
-- RegulatoryAlertPanel: Lists and manages compliance alerts
-- DocumentVault: Manages and tracks KYC documents
+2. Market Network Interdependency Mapping
+   - Network graph showing market connections
+   - Strength and risk of interconnections
 
-Technologies Used:
+3. Advanced Risk Scoring
+   - Composite risk calculation
+   - Historical trend analysis
+   - Multiple risk dimension integration
+
+4. Geopolitical Risk Integration
+   - Region-specific tension tracking
+   - Economic impact assessment
+
+5. Automated Reporting
+   - PDF report generation
+   - Comprehensive risk snapshot
+
+Technologies:
 - Next.js 14
 - TypeScript
 - TailwindCSS
-- Dynamic imports for performance
+- Dynamic imports
 - Responsive design
 
-The dashboard provides a holistic view of regulatory compliance, with real-time updates and actionable insights for compliance managers.
+The implementation provides a holistic view of systemic risk, enabling financial analysts and risk managers to understand complex market dynamics and potential contagion risks.
 
-Would you like me to elaborate on any specific aspect of the implementation?
+Would you like me to elaborate on any specific component or aspect of the systemic risk monitoring system?
