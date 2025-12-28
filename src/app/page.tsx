@@ -78,28 +78,31 @@ export default function ComplianceDashboard() {
                             </div>
                         </div>
                     </div>
-                    
-                    <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
+
+                    {/* Compliance Alerts */}
+                    <div className="md:col-span-2 bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
                         <ComplianceAlerts market={selectedMarket} />
                     </div>
-                    
+                </div>
+
+                {/* Regulatory and Risk Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
+                        <RegulatoryChangeTracker market={selectedMarket} />
+                    </div>
                     <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
                         <RiskScoreBoard market={selectedMarket} />
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
-                        <RegulatoryChangeTracker market={selectedMarket} />
-                    </div>
-                    
-                    <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
-                        <TradingRestrictions market={selectedMarket} />
-                    </div>
+                {/* Trading Restrictions */}
+                <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
+                    <TradingRestrictions market={selectedMarket} symbol={selectedSymbol} />
                 </div>
 
-                <div className="mt-6 text-center text-sm text-gray-500">
-                    <p>AI Trading Platform • Real-time Market Data & Compliance Module • {new Date().getFullYear()}</p>
+                {/* Footer */}
+                <div className="mt-8 pt-6 border-t border-gray-700 text-center text-gray-400 text-sm">
+                    <p>AI Trading Platform v1.0 • Real-time compliance monitoring • {new Date().getFullYear()}</p>
                 </div>
             </div>
         </div>
