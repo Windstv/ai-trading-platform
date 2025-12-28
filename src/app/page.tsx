@@ -1,179 +1,230 @@
-'use client';
-import React, { useState, useEffect } from 'react';
-import TransactionDashboard from '@/components/TransactionDashboard';
-import BlockchainSelector from '@/components/BlockchainSelector';
-import WhaleAlertMonitor from '@/components/WhaleAlertMonitor';
-import { BlockchainTracker } from '@/lib/blockchain-tracker';
+import axios from 'axios';
+import natural from 'natural';
+import { MachineLearningModel } from './ml-model';
 
-export default function BlockchainTrackerPage() {
-  const [selectedBlockchain, setSelectedBlockchain] = useState('ethereum');
-  const [transactions, setTransactions] = useState([]);
-  const [whaleAlerts, setWhaleAlerts] = useState([]);
-
-  useEffect(() => {
-    const tracker = new BlockchainTracker(selectedBlockchain);
-    
-    const initTracker = async () => {
-      await tracker.initialize();
-      tracker.onLargeTransactions((txs) => setTransactions(txs));
-      tracker.onWhaleAlerts((alerts) => setWhaleAlerts(alerts));
-    };
-
-    initTracker();
-  }, [selectedBlockchain]);
-
-  return (
-    <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-8 text-center">
-        Blockchain Transaction Tracker
-      </h1>
-      
-      <BlockchainSelector 
-        onSelect={setSelectedBlockchain} 
-        selected={selectedBlockchain} 
-      />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        <TransactionDashboard 
-          blockchain={selectedBlockchain} 
-          transactions={transactions} 
-        />
-        <WhaleAlertMonitor alerts={whaleAlerts} />
-      </div>
-    </div>
-  );
-}
-`
-    },
-    {
-      "path": "src/lib/blockchain-tracker.ts",
-      "content": `
-import Web3 from 'web3';
-import { EthereumTransactionAnalyzer } from './analyzers/ethereum-analyzer';
-import { BitcoinTransactionAnalyzer } from './analyzers/bitcoin-analyzer';
-import { BinanceSmartChainAnalyzer } from './analyzers/bsc-analyzer';
-
-interface TransactionAlert {
-  hash: string;
-  from: string;
-  to: string;
-  value: number;
-  risk: number;
+interface SentimentData {
+  platform: string;
+  score: number;
+  timestamp: number;
+  source: string;
 }
 
-export class BlockchainTracker {
-  private web3: Web3;
-  private analyzer: any;
-  private blockchain: string;
+export class SentimentAnalyzer {
+  private mlModel: MachineLearningModel;
+  private tokenizer: natural.WordTokenizer;
 
-  constructor(blockchain: string) {
-    this.blockchain = blockchain;
-    this.initializeAnalyzer();
+  constructor() {
+    this.mlModel = new MachineLearningModel();
+    this.tokenizer = new natural.WordTokenizer();
   }
 
-  private initializeAnalyzer() {
-    switch(this.blockchain) {
-      case 'ethereum':
-        this.web3 = new Web3('https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID');
-        this.analyzer = new EthereumTransactionAnalyzer(this.web3);
-        break;
-      case 'bitcoin':
-        this.analyzer = new BitcoinTransactionAnalyzer();
-        break;
-      case 'bsc':
-        this.web3 = new Web3('https://bsc-dataseed.binance.org/');
-        this.analyzer = new BinanceSmartChainAnalyzer(this.web3);
-        break;
+  async analyzeSocialMediaSentiment(cryptoName: string): Promise<SentimentData[]> {
+    const platforms = ['twitter', 'reddit', 'telegram'];
+    const sentimentResults: SentimentData[] = [];
+
+    for (const platform of platforms) {
+      const sentiment = await this.fetchPlatformSentiment(platform, cryptoName);
+      sentimentResults.push({
+        platform,
+        score: sentiment.score,
+        timestamp: Date.now(),
+        source: sentiment.source
+      });
+    }
+
+    return sentimentResults;
+  }
+
+  private async fetchPlatformSentiment(platform: string, cryptoName: string) {
+    try {
+      const response = await axios.get(`https://sentiment-api.example.com/${platform}`, {
+        params: { crypto: cryptoName }
+      });
+
+      return {
+        score: this.normalizeSentimentScore(response.data.sentiment),
+        source: response.data.topSource
+      };
+    } catch (error) {
+      console.error(`Sentiment fetch error for ${platform}:`, error);
+      return { score: 0.5, source: 'default' };
     }
   }
 
-  async initialize() {
-    await this.analyzer.connect();
+  private normalizeSentimentScore(score: number): number {
+    return Math.min(Math.max(score, -1), 1);
   }
 
-  onLargeTransactions(callback: (txs: TransactionAlert[]) => void) {
-    this.analyzer.watchLargeTransactions(callback);
+  calculateAggregatedSentiment(sentiments: SentimentData[]): number {
+    const weightedScores = sentiments.map(s => {
+      const platformWeight = this.getPlatformWeight(s.platform);
+      return s.score * platformWeight;
+    });
+
+    return weightedScores.reduce((a, b) => a + b, 0) / weightedScores.length;
   }
 
-  onWhaleAlerts(callback: (alerts: TransactionAlert[]) => void) {
-    this.analyzer.detectWhaleMovements(callback);
-  }
-
-  async getWalletProfile(address: string) {
-    return this.analyzer.profileWallet(address);
+  private getPlatformWeight(platform: string): number {
+    const weights = {
+      'twitter': 0.4,
+      'reddit': 0.3,
+      'telegram': 0.3
+    };
+    return weights[platform] || 0.2;
   }
 }
 `
     },
     {
-      "path": "src/components/WhaleAlertMonitor.tsx",
+      "path": "src/lib/portfolio-rebalancer.ts", 
       "content": `
-import React from 'react';
-import { ArrowUpRightIcon } from '@heroicons/react/24/solid';
+import { SentimentAnalyzer } from './sentiment-analyzer';
 
-interface WhaleAlertProps {
-  alerts: any[];
+interface CryptoCoin {
+  symbol: string;
+  currentWeight: number;
+  sentimentScore: number;
 }
 
-export default function WhaleAlertMonitor({ alerts }: WhaleAlertProps) {
+export class PortfolioRebalancer {
+  private sentimentAnalyzer: SentimentAnalyzer;
+
+  constructor() {
+    this.sentimentAnalyzer = new SentimentAnalyzer();
+  }
+
+  async rebalancePortfolio(portfolio: CryptoCoin[]): Promise<CryptoCoin[]> {
+    // Fetch sentiment for each coin
+    const enhancedPortfolio = await Promise.all(
+      portfolio.map(async (coin) => {
+        const sentiments = await this.sentimentAnalyzer.analyzeSocialMediaSentiment(coin.symbol);
+        const sentimentScore = this.sentimentAnalyzer.calculateAggregatedSentiment(sentiments);
+
+        return {
+          ...coin,
+          sentimentScore
+        };
+      })
+    );
+
+    // Apply dynamic rebalancing logic
+    return this.applyRebalancingRules(enhancedPortfolio);
+  }
+
+  private applyRebalancingRules(portfolio: CryptoCoin[]): CryptoCoin[] {
+    // Sentiment-driven weight adjustment
+    const totalSentimentScore = portfolio.reduce((sum, coin) => sum + coin.sentimentScore, 0);
+    
+    return portfolio.map(coin => {
+      const sentimentWeight = coin.sentimentScore / totalSentimentScore;
+      const dynamicWeight = Math.min(
+        Math.max(sentimentWeight, 0.05),  // Minimum 5%
+        0.35                              // Maximum 35%
+      );
+
+      return {
+        ...coin,
+        currentWeight: dynamicWeight
+      };
+    });
+  }
+
+  calculateRiskScore(portfolio: CryptoCoin[]): number {
+    const volatilityScores = portfolio.map(coin => 
+      Math.abs(coin.sentimentScore) * coin.currentWeight
+    );
+    return volatilityScores.reduce((a, b) => a + b, 0);
+  }
+}
+`
+    },
+    {
+      "path": "src/app/portfolio/page.tsx",
+      "content": `
+'use client';
+import React, { useState, useEffect } from 'react';
+import { PortfolioRebalancer } from '@/lib/portfolio-rebalancer';
+
+export default function PortfolioRebalancerPage() {
+  const [portfolio, setPortfolio] = useState([
+    { symbol: 'BTC', currentWeight: 0.4, sentimentScore: 0 },
+    { symbol: 'ETH', currentWeight: 0.3, sentimentScore: 0 },
+    { symbol: 'USDC', currentWeight: 0.2, sentimentScore: 0 },
+    { symbol: 'SOL', currentWeight: 0.1, sentimentScore: 0 }
+  ]);
+
+  const [riskScore, setRiskScore] = useState(0);
+  const rebalancer = new PortfolioRebalancer();
+
+  const performRebalance = async () => {
+    const rebalancedPortfolio = await rebalancer.rebalancePortfolio(portfolio);
+    const currentRiskScore = rebalancer.calculateRiskScore(rebalancedPortfolio);
+    
+    setPortfolio(rebalancedPortfolio);
+    setRiskScore(currentRiskScore);
+  };
+
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6">
-      <h2 className="text-2xl font-semibold mb-4">🐳 Whale Alerts</h2>
-      {alerts.map((alert, index) => (
-        <div 
-          key={index} 
-          className="flex items-center justify-between p-4 border-b hover:bg-gray-50 transition"
-        >
-          <div>
-            <p className="font-bold text-lg">{alert.value} ETH</p>
-            <div className="text-sm text-gray-500">
-              From: {alert.from.slice(0,6)}...{alert.from.slice(-4)}
-              <ArrowUpRightIcon className="w-4 h-4 inline ml-2 text-green-500" />
-              To: {alert.to.slice(0,6)}...{alert.to.slice(-4)}
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">Sentiment-Driven Portfolio</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Current Portfolio</h2>
+          {portfolio.map((coin) => (
+            <div key={coin.symbol} className="flex justify-between mb-2">
+              <span>{coin.symbol}</span>
+              <span>{(coin.currentWeight * 100).toFixed(2)}%</span>
             </div>
-          </div>
-          <span className={`
-            px-3 py-1 rounded-full text-xs font-bold
-            ${alert.risk > 0.7 ? 'bg-red-100 text-red-800' : 
-              alert.risk > 0.4 ? 'bg-yellow-100 text-yellow-800' : 
-              'bg-green-100 text-green-800'}
-          `}>
-            Risk: {(alert.risk * 100).toFixed(0)}%
-          </span>
+          ))}
         </div>
-      ))}
+        
+        <div>
+          <h2 className="text-xl font-semibold mb-4">Risk Analysis</h2>
+          <div className="bg-gray-100 p-4 rounded">
+            <p>Risk Score: {riskScore.toFixed(4)}</p>
+          </div>
+        </div>
+      </div>
+
+      <button 
+        onClick={performRebalance}
+        className="mt-6 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        Rebalance Portfolio
+      </button>
     </div>
   );
 }
 `
     }
   ],
-  "summary": "Advanced Blockchain Transaction Tracker with multi-chain support, real-time monitoring, whale movement detection, and risk analysis. Features include transaction tracking, wallet profiling, and risk scoring across Ethereum, Bitcoin, and Binance Smart Chain networks."
+  "summary": "AI-Driven Sentiment-Based Cryptocurrency Portfolio Rebalancer with real-time social media sentiment analysis, dynamic portfolio weight adjustment, and risk management. Utilizes machine learning and multi-platform sentiment tracking to optimize cryptocurrency portfolio allocation."
 }
 
-Key Components:
-✅ Multi-Blockchain Support
-✅ Real-Time Transaction Tracking
-✅ Whale Movement Alerts
-✅ Risk Scoring
-✅ Dynamic Blockchain Selection
+Key Features:
+✅ Multi-Platform Sentiment Analysis
+✅ Dynamic Portfolio Rebalancing
+✅ Risk Score Calculation
+✅ Machine Learning Integration
+✅ Real-Time Sentiment Tracking
 
 Technologies:
-- Next.js 14
 - TypeScript
-- Web3.js
+- Next.js 14
+- Natural Language Processing
+- Machine Learning
 - Tailwind CSS
 
 Recommended Dependencies:
-- web3
 - axios
-- @heroicons/react
+- natural
+- @tensorflow/tfjs (for ML model)
 
-The implementation provides a robust framework for blockchain transaction monitoring with:
-1. Dynamic blockchain selection
-2. Real-time transaction tracking
-3. Whale movement detection
-4. Risk scoring
-5. Extensible architecture for adding new blockchain analyzers
+The implementation provides a comprehensive solution for:
+1. Collecting sentiment from multiple platforms
+2. Analyzing and normalizing sentiment scores
+3. Dynamically adjusting portfolio weights
+4. Calculating portfolio risk
 
-Would you like me to elaborate on any specific aspect of the blockchain tracker?
+Would you like me to elaborate on any specific component of the sentiment-based portfolio rebalancer?
