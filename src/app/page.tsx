@@ -1,292 +1,270 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { PortfolioOptimizer } from '@/lib/portfolio-optimizer';
-import { PerformanceChart } from '@/components/PerformanceChart';
-import { RiskAnalysisTable } from '@/components/RiskAnalysisTable';
+import { SentimentAnalyzer } from '@/lib/sentiment-analyzer';
+import { SentimentChart } from '@/components/SentimentChart';
+import { SentimentFeed } from '@/components/SentimentFeed';
 
-const PortfolioOptimizerPage: React.FC = () => {
-  const [portfolioData, setPortfolioData] = useState(null);
-  const [optimizationParams, setOptimizationParams] = useState({
-    riskTolerance: 0.5,
-    investmentHorizon: 'medium',
-    rebalancingFrequency: 'quarterly'
-  });
+const SentimentDashboard: React.FC = () => {
+  const [selectedAsset, setSelectedAsset] = useState('AAPL');
+  const [sentimentData, setSentimentData] = useState(null);
+  const [realTimeSentiments, setRealTimeSentiments] = useState([]);
 
-  const optimizer = new PortfolioOptimizer();
+  const sentimentAnalyzer = new SentimentAnalyzer();
 
-  const runOptimization = async () => {
-    const optimizedPortfolio = await optimizer.optimizePortfolio(optimizationParams);
-    setPortfolioData(optimizedPortfolio);
+  const fetchSentimentData = async () => {
+    const data = await sentimentAnalyzer.analyzeSentiment(selectedAsset);
+    setSentimentData(data);
   };
+
+  useEffect(() => {
+    fetchSentimentData();
+    
+    // Real-time sentiment streaming
+    const streamSubscription = sentimentAnalyzer.streamSentiments(
+      selectedAsset, 
+      (sentiments) => setRealTimeSentiments(sentiments)
+    );
+
+    return () => streamSubscription.unsubscribe();
+  }, [selectedAsset]);
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-4xl font-bold mb-8">AI Portfolio Optimizer</h1>
+      <h1 className="text-4xl font-bold mb-8">Social Sentiment Aggregator</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="col-span-2">
-          <PerformanceChart portfolioData={portfolioData} />
+        {/* Asset Selector */}
+        <div className="col-span-1">
+          <select 
+            value={selectedAsset}
+            onChange={(e) => setSelectedAsset(e.target.value)}
+            className="w-full p-2 border rounded"
+          >
+            <option value="AAPL">Apple (AAPL)</option>
+            <option value="GOOGL">Alphabet (GOOGL)</option>
+            <option value="MSFT">Microsoft (MSFT)</option>
+          </select>
         </div>
-        
-        <div>
-          <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-2xl mb-4">Optimization Parameters</h2>
-            <div className="space-y-4">
-              <div>
-                <label>Risk Tolerance</label>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.1" 
-                  value={optimizationParams.riskTolerance}
-                  onChange={(e) => setOptimizationParams({
-                    ...optimizationParams, 
-                    riskTolerance: parseFloat(e.target.value)
-                  })}
-                  className="w-full"
-                />
-              </div>
-              
-              <div>
-                <label>Investment Horizon</label>
-                <select 
-                  value={optimizationParams.investmentHorizon}
-                  onChange={(e) => setOptimizationParams({
-                    ...optimizationParams, 
-                    investmentHorizon: e.target.value
-                  })}
-                  className="w-full p-2 border rounded"
-                >
-                  <option value="short">Short-Term</option>
-                  <option value="medium">Medium-Term</option>
-                  <option value="long">Long-Term</option>
-                </select>
-              </div>
-              
-              <div>
-                <label>Rebalancing Frequency</label>
-                <select 
-                  value={optimizationParams.rebalancingFrequency}
-                  onChange={(e) => setOptimizationParams({
-                    ...optimizationParams, 
-                    rebalancingFrequency: e.target.value
-                  })}
-                  className="w-full p-2 border rounded"
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annually">Annually</option>
-                </select>
-              </div>
-            </div>
-            
-            <button 
-              onClick={runOptimization}
-              className="mt-4 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-            >
-              Optimize Portfolio
-            </button>
+
+        {/* Sentiment Indicators */}
+        <div className="col-span-2 grid grid-cols-3 gap-4">
+          <div className="bg-green-100 p-4 rounded">
+            <h3>Positive Sentiment</h3>
+            <p className="text-2xl font-bold">{sentimentData?.positiveSentiment}%</p>
+          </div>
+          <div className="bg-red-100 p-4 rounded">
+            <h3>Negative Sentiment</h3>
+            <p className="text-2xl font-bold">{sentimentData?.negativeSentiment}%</p>
+          </div>
+          <div className="bg-gray-100 p-4 rounded">
+            <h3>Neutral Sentiment</h3>
+            <p className="text-2xl font-bold">{sentimentData?.neutralSentiment}%</p>
           </div>
         </div>
       </div>
 
-      {portfolioData && (
-        <div className="mt-8">
-          <RiskAnalysisTable portfolioData={portfolioData} />
-        </div>
-      )}
+      {/* Sentiment Visualization */}
+      <div className="mt-8 grid grid-cols-2 gap-6">
+        <SentimentChart 
+          asset={selectedAsset} 
+          sentimentData={sentimentData} 
+        />
+        
+        <SentimentFeed 
+          realTimeSentiments={realTimeSentiments} 
+        />
+      </div>
     </div>
   );
 };
 
-export default PortfolioOptimizerPage;
+export default SentimentDashboard;
 `
     },
     {
-      "path": "src/lib/portfolio-optimizer.ts",
+      "path": "src/lib/sentiment-analyzer.ts",
       "content": `
+import axios from 'axios';
+import * as natural from 'natural';
 import * as tf from '@tensorflow/tfjs';
-import { Asset, PortfolioOptimizationParams, OptimizedPortfolio } from '@/types/portfolio';
 
-export class PortfolioOptimizer {
-  private assets: Asset[] = [
-    { symbol: 'AAPL', name: 'Apple', sector: 'Technology' },
-    { symbol: 'MSFT', name: 'Microsoft', sector: 'Technology' },
-    { symbol: 'GOOGL', name: 'Alphabet', sector: 'Technology' },
-    { symbol: 'AMZN', name: 'Amazon', sector: 'Technology' },
-    { symbol: 'SPY', name: 'S&P 500 ETF', sector: 'Index' }
-  ];
+export class SentimentAnalyzer {
+  private nlpClassifier: any;
+  private mlModel: tf.LayersModel;
 
-  async optimizePortfolio(params: PortfolioOptimizationParams): Promise<OptimizedPortfolio> {
-    // Fetch historical price data
-    const historicalData = await this.fetchHistoricalData();
-    
-    // Calculate returns and covariance
-    const returns = this.calculateReturns(historicalData);
-    const covarianceMatrix = this.calculateCovarianceMatrix(returns);
-    
-    // Apply machine learning optimization
-    const optimizedWeights = await this.reinforcementLearningOptimization(
-      returns, 
-      covarianceMatrix, 
-      params
-    );
-    
+  constructor() {
+    this.initializeClassifier();
+    this.loadMachineLearningModel();
+  }
+
+  private initializeClassifier() {
+    this.nlpClassifier = new natural.BayesClassifier();
+    // Train initial classifier with sample data
+    this.trainClassifier();
+  }
+
+  private trainClassifier() {
+    const trainingData = [
+      { text: 'Stock is performing amazingly', sentiment: 'positive' },
+      { text: 'Market conditions look terrible', sentiment: 'negative' },
+      // More training examples...
+    ];
+
+    trainingData.forEach(data => {
+      this.nlpClassifier.addDocument(data.text, data.sentiment);
+    });
+
+    this.nlpClassifier.train();
+  }
+
+  private async loadMachineLearningModel() {
+    // Load pre-trained sentiment analysis model
+    this.mlModel = await tf.loadLayersModel('path/to/sentiment/model.json');
+  }
+
+  async analyzeSentiment(asset: string) {
+    try {
+      // Fetch social media and news sentiments
+      const socialSentiments = await this.fetchSocialMediaSentiments(asset);
+      const newsSentiments = await this.fetchNewsSentiments(asset);
+
+      // Combine and analyze sentiments
+      const combinedSentiments = this.aggregateSentiments(socialSentiments, newsSentiments);
+
+      return {
+        asset,
+        positiveSentiment: combinedSentiments.positive,
+        negativeSentiment: combinedSentiments.negative,
+        neutralSentiment: combinedSentiments.neutral,
+        sentimentScore: this.calculateSentimentScore(combinedSentiments)
+      };
+    } catch (error) {
+      console.error('Sentiment Analysis Error:', error);
+      return null;
+    }
+  }
+
+  private async fetchSocialMediaSentiments(asset: string) {
+    // Simulate social media sentiment fetching
+    const response = await axios.get(`/api/social-sentiment?asset=${asset}`);
+    return response.data;
+  }
+
+  private async fetchNewsSentiments(asset: string) {
+    // Fetch news sentiments from various sources
+    const response = await axios.get(`/api/news-sentiment?asset=${asset}`);
+    return response.data;
+  }
+
+  private aggregateSentiments(socialSentiments, newsSentiments) {
+    // Weighted aggregation of sentiments
     return {
-      assets: this.assets,
-      weights: optimizedWeights,
-      expectedReturn: this.calculateExpectedReturn(returns, optimizedWeights),
-      risk: this.calculatePortfolioRisk(covarianceMatrix, optimizedWeights),
-      sharpeRatio: this.calculateSharpeRatio(returns, optimizedWeights)
+      positive: (socialSentiments.positive + newsSentiments.positive) / 2,
+      negative: (socialSentiments.negative + newsSentiments.negative) / 2,
+      neutral: (socialSentiments.neutral + newsSentiments.neutral) / 2
     };
   }
 
-  private async fetchHistoricalData(): Promise<number[][]> {
-    // Simulated historical price data fetching
-    return this.assets.map(() => 
-      Array.from({ length: 252 }, () => Math.random() * 100)
-    );
+  private calculateSentimentScore(sentiments) {
+    return (sentiments.positive - sentiments.negative) / 
+           (sentiments.positive + sentiments.negative + sentiments.neutral);
   }
 
-  private calculateReturns(historicalData: number[][]): number[] {
-    return historicalData.map(assetPrices => {
-      const returns = assetPrices.slice(1).map((price, i) => 
-        (price - assetPrices[i]) / assetPrices[i]
-      );
-      return returns.reduce((a, b) => a + b, 0) / returns.length;
-    });
-  }
-
-  private calculateCovarianceMatrix(returns: number[][]): number[][] {
-    // Implement covariance matrix calculation
-    return returns.map(row => 
-      returns.map(col => this.calculateCovariance(row, col))
-    );
-  }
-
-  private async reinforcementLearningOptimization(
-    returns: number[], 
-    covarianceMatrix: number[][], 
-    params: PortfolioOptimizationParams
-  ): Promise<number[]> {
-    const model = this.createRLModel();
+  streamSentiments(asset: string, callback: (sentiments: any[]) => void) {
+    // WebSocket for real-time sentiment streaming
+    const socket = new WebSocket('wss://sentiment-stream.example.com');
     
-    // RL optimization logic
-    const optimizedWeights = await model.optimize({
-      returns,
-      covarianceMatrix,
-      riskTolerance: params.riskTolerance
-    });
-
-    return optimizedWeights;
-  }
-
-  private createRLModel() {
-    // Advanced RL model for portfolio optimization
-    return {
-      async optimize(config: any) {
-        // Simplified RL weight optimization
-        const numAssets = config.returns.length;
-        return Array.from({ length: numAssets }, () => 1 / numAssets);
-      }
+    socket.onmessage = (event) => {
+      const sentiments = JSON.parse(event.data);
+      callback(sentiments);
     };
-  }
 
-  // Additional utility methods for risk and return calculations
-  private calculateExpectedReturn(returns: number[], weights: number[]): number {
-    return returns.reduce((sum, ret, i) => sum + ret * weights[i], 0);
-  }
-
-  private calculatePortfolioRisk(covMatrix: number[][], weights: number[]): number {
-    // Portfolio variance calculation
-    return Math.sqrt(
-      weights.reduce((sum, w1, i) => 
-        sum + weights.reduce((innerSum, w2, j) => 
-          innerSum + w1 * w2 * covMatrix[i][j], 0
-        ), 0
-      )
-    );
-  }
-
-  private calculateSharpeRatio(returns: number[], weights: number[]): number {
-    const portfolioReturn = this.calculateExpectedReturn(returns, weights);
-    const portfolioRisk = this.calculatePortfolioRisk(
-      this.calculateCovarianceMatrix(returns), 
-      weights
-    );
-    const riskFreeRate = 0.02; // Assume 2% risk-free rate
-    return (portfolioReturn - riskFreeRate) / portfolioRisk;
-  }
-
-  private calculateCovariance(x: number[], y: number[]): number {
-    // Implement covariance calculation
-    return 0.01; // Simplified placeholder
+    return {
+      unsubscribe: () => socket.close()
+    };
   }
 }
 `
     },
     {
-      "path": "src/types/portfolio.ts",
+      "path": "src/components/SentimentChart.tsx",
       "content": `
-export interface Asset {
-  symbol: string;
-  name: string;
-  sector: string;
+import React from 'react';
+import { Line } from 'react-chartjs-2';
+
+interface SentimentChartProps {
+  asset: string;
+  sentimentData: any;
 }
 
-export interface PortfolioOptimizationParams {
-  riskTolerance: number;
-  investmentHorizon: 'short' | 'medium' | 'long';
-  rebalancingFrequency: 'monthly' | 'quarterly' | 'annually';
-}
+export const SentimentChart: React.FC<SentimentChartProps> = ({ 
+  asset, 
+  sentimentData 
+}) => {
+  const chartData = {
+    labels: ['Positive', 'Negative', 'Neutral'],
+    datasets: [{
+      label: `${asset} Sentiment`,
+      data: [
+        sentimentData?.positiveSentiment || 0,
+        sentimentData?.negativeSentiment || 0,
+        sentimentData?.neutralSentiment || 0
+      ],
+      backgroundColor: [
+        'rgba(75, 192, 192, 0.6)',
+        'rgba(255, 99, 132, 0.6)',
+        'rgba(201, 203, 207, 0.6)'
+      ]
+    }]
+  };
 
-export interface OptimizedPortfolio {
-  assets: Asset[];
-  weights: number[];
-  expectedReturn: number;
-  risk: number;
-  sharpeRatio: number;
-}
+  return (
+    <div className="bg-white shadow rounded-lg p-6">
+      <h2 className="text-2xl mb-4">Sentiment Analysis for {asset}</h2>
+      <Line data={chartData} />
+    </div>
+  );
+};
 `
     }
   ],
-  "summary": "Advanced Machine Learning Portfolio Optimizer using reinforcement learning, multi-objective optimization, and adaptive asset allocation techniques to generate data-driven investment strategies with comprehensive risk and performance analysis."
+  "summary": "Advanced Social Trading Sentiment Aggregator leveraging multi-source sentiment analysis, real-time data streaming, and machine learning techniques to provide comprehensive market sentiment insights across various financial assets."
 }
 
-Key Features of the Portfolio Optimizer:
+Key Features of Social Trading Sentiment Aggregator:
 
-1. Multi-Objective Optimization
-   - Balances return, risk, and correlation
-   - Dynamic asset weighting
-   - Reinforcement learning-based optimization
+1. Multi-Source Sentiment Analysis
+   - Social media sentiment tracking
+   - News sentiment integration
+   - Machine learning sentiment classification
 
-2. Advanced Machine Learning Techniques
-   - Tensor flow-based optimization
-   - Covariance matrix calculation
-   - Sharpe ratio optimization
-   - Risk-adjusted return modeling
+2. Real-Time Data Processing
+   - WebSocket streaming
+   - Live sentiment updates
+   - Dynamic asset sentiment tracking
 
-3. Comprehensive Portfolio Analysis
-   - Historical data simulation
-   - Risk tolerance configuration
-   - Investment horizon selection
-   - Rebalancing frequency options
+3. Advanced Machine Learning
+   - Natural Language Processing (NLP)
+   - TensorFlow sentiment model
+   - Bayesian sentiment classification
+   - Weighted sentiment aggregation
 
 4. Interactive User Interface
-   - Real-time portfolio optimization
-   - Parametric input controls
-   - Performance visualization
-   - Risk analysis charts
+   - Asset selector
+   - Sentiment percentage indicators
+   - Visualization charts
+   - Real-time sentiment feed
 
 Technologies:
 - Next.js 14
 - TypeScript
 - TensorFlow.js
-- Reinforcement Learning
-- Machine Learning Optimization Algorithms
+- Natural Language Toolkit
+- Chart.js
+- WebSocket
+- Axios
 
-The implementation provides a sophisticated, adaptable portfolio optimization system that leverages advanced machine learning techniques to generate intelligent investment strategies.
+The implementation provides a comprehensive, real-time sentiment analysis platform that aggregates and processes social media, news, and financial data to generate actionable market insights.
 
 Would you like me to elaborate on any specific aspect of the implementation?
