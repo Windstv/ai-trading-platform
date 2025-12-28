@@ -1,86 +1,83 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import dynamic from 'next/dynamic'
-import { CurrencyRiskAnalyzer } from '@/lib/currency-risk-analyzer'
-import { RiskCorrelationMatrix } from '@/components/risk-correlation-matrix'
-import { GeopoliticalRiskWidget } from '@/components/geopolitical-risk-widget'
-import { MacroeconomicIndicators } from '@/components/macroeconomic-indicators'
-import { PredictiveRiskModel } from '@/components/predictive-risk-model'
+import { ComplianceRiskScorer } from '@/lib/compliance-risk-scorer'
+import { RegulationAlertSystem } from '@/components/regulation-alert-system'
+import { ComplianceDocumentManager } from '@/components/compliance-document-manager'
+import { TradeViolationFlagWidget } from '@/components/trade-violation-flag-widget'
+import { GlobalRegulationDatabase } from '@/lib/global-regulation-database'
 
-export interface CurrencyPair {
-  base: string
-  quote: string
-  correlation: number
-  volatility: number
+export interface ComplianceRule {
+  id: string
+  jurisdiction: string
+  description: string
+  riskThreshold: number
 }
 
-export interface GeopoliticalRisk {
+export interface TradeActivity {
+  tradeId: string
+  instrument: string
   region: string
-  score: number
-  factors: string[]
+  riskScore: number
+  potentialViolation: boolean
 }
 
-export interface MacroIndicator {
-  country: string
-  indicator: string
-  value: number
-  trend: 'positive' | 'negative' | 'neutral'
+export interface ComplianceAlert {
+  alertId: string
+  type: 'warning' | 'critical'
+  message: string
+  timestamp: Date
 }
 
-export default function CurrencyRiskDashboard() {
-  const [currencyPairs, setCurrencyPairs] = useState<CurrencyPair[]>([])
-  const [geopoliticalRisks, setGeopoliticalRisks] = useState<GeopoliticalRisk[]>([])
-  const [macroIndicators, setMacroIndicators] = useState<MacroIndicator[]>([])
+export default function RegulatoryComplianceDashboard() {
+  const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
+  const [tradeActivities, setTradeActivities] = useState<TradeActivity[]>([])
+  const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const riskAnalyzer = new CurrencyRiskAnalyzer()
+    const riskScorer = new ComplianceRiskScorer()
+    const regulationDb = new GlobalRegulationDatabase()
 
-    async function fetchRiskData() {
+    async function fetchComplianceData() {
       try {
-        const pairs = await riskAnalyzer.calculateCurrencyCorrelations()
-        const geoRisks = await riskAnalyzer.assessGeopoliticalRisks()
-        const macros = await riskAnalyzer.fetchMacroeconomicIndicators()
+        const rules = await regulationDb.fetchActiveComplianceRules()
+        const trades = await riskScorer.assessTradeRisks()
+        const alerts = await riskScorer.generateComplianceAlerts(trades)
 
-        setCurrencyPairs(pairs)
-        setGeopoliticalRisks(geoRisks)
-        setMacroIndicators(macros)
+        setComplianceRules(rules)
+        setTradeActivities(trades)
+        setComplianceAlerts(alerts)
         setLoading(false)
       } catch (error) {
-        console.error('Risk data fetch failed', error)
+        console.error('Compliance data fetch failed', error)
         setLoading(false)
       }
     }
 
-    fetchRiskData()
-    const interval = setInterval(fetchRiskData, 15 * 60 * 1000) // Refresh every 15 minutes
+    fetchComplianceData()
+    const interval = setInterval(fetchComplianceData, 10 * 60 * 1000) // Refresh every 10 minutes
     return () => clearInterval(interval)
   }, [])
 
-  if (loading) return <div>Loading Risk Dashboard...</div>
+  if (loading) return <div>Loading Regulatory Compliance Dashboard...</div>
 
   return (
     <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div className="col-span-full">
-        <h1 className="text-3xl font-bold mb-6">Multi-Currency Risk Correlation Dashboard</h1>
+        <h1 className="text-3xl font-bold mb-6">Global Regulatory Compliance Dashboard</h1>
       </div>
 
-      <RiskCorrelationMatrix 
-        currencyPairs={currencyPairs} 
+      <RegulationAlertSystem 
+        alerts={complianceAlerts} 
       />
 
-      <GeopoliticalRiskWidget 
-        risks={geopoliticalRisks} 
+      <TradeViolationFlagWidget 
+        trades={tradeActivities} 
       />
 
-      <MacroeconomicIndicators 
-        indicators={macroIndicators} 
-      />
-
-      <PredictiveRiskModel 
-        currencyPairs={currencyPairs} 
-        geopoliticalRisks={geopoliticalRisks}
+      <ComplianceDocumentManager 
+        rules={complianceRules} 
       />
     </div>
   )
@@ -88,105 +85,67 @@ export default function CurrencyRiskDashboard() {
 `
     },
     {
-      "path": "src/lib/currency-risk-analyzer.ts", 
+      "path": "src/lib/compliance-risk-scorer.ts",
       "content": `
 import axios from 'axios'
-import { CurrencyPair, GeopoliticalRisk, MacroIndicator } from '@/app/currency-risk-dashboard/page'
+import { ComplianceRule, TradeActivity, ComplianceAlert } from '@/app/regulatory-compliance/page'
 
-export class CurrencyRiskAnalyzer {
-  async calculateCurrencyCorrelations(): Promise<CurrencyPair[]> {
-    const currencies = ['USD', 'EUR', 'JPY', 'GBP', 'CHF', 'CAD', 'AUD', 'CNY']
-    const correlations: CurrencyPair[] = []
+export class ComplianceRiskScorer {
+  async assessTradeRisks(): Promise<TradeActivity[]> {
+    const tradingInstruments = ['Stocks', 'Derivatives', 'Forex', 'Crypto']
+    const regions = ['US', 'EU', 'UK', 'Asia', 'LATAM']
+    
+    const tradeRisks: TradeActivity[] = []
 
-    for (let i = 0; i < currencies.length; i++) {
-      for (let j = i + 1; j < currencies.length; j++) {
-        const base = currencies[i]
-        const quote = currencies[j]
-        
+    for (const instrument of tradingInstruments) {
+      for (const region of regions) {
         try {
-          const response = await axios.get('/api/currency-correlation', {
-            params: { base, quote }
+          const response = await axios.get('/api/trade-risk-assessment', {
+            params: { instrument, region }
           })
           
-          correlations.push({
-            base,
-            quote,
-            correlation: response.data.correlation,
-            volatility: response.data.volatility
+          tradeRisks.push({
+            tradeId: response.data.tradeId,
+            instrument,
+            region,
+            riskScore: response.data.riskScore,
+            potentialViolation: response.data.potentialViolation
           })
         } catch (error) {
-          console.error(`Correlation calculation error for ${base}/${quote}`, error)
+          console.error(`Risk assessment error for ${instrument} in ${region}`, error)
         }
       }
     }
 
-    return correlations
+    return tradeRisks
   }
 
-  async assessGeopoliticalRisks(): Promise<GeopoliticalRisk[]> {
-    const regions = ['North America', 'Europe', 'Asia', 'Middle East', 'Latin America']
+  async generateComplianceAlerts(trades: TradeActivity[]): Promise<ComplianceAlert[]> {
+    const highRiskTrades = trades.filter(trade => trade.riskScore > 7 || trade.potentialViolation)
     
-    const risks: GeopoliticalRisk[] = await Promise.all(
-      regions.map(async (region) => {
-        try {
-          const response = await axios.get('/api/geopolitical-risk', {
-            params: { region }
-          })
+    const alerts: ComplianceAlert[] = highRiskTrades.map(trade => ({
+      alertId: `ALERT-${trade.tradeId}`,
+      type: trade.riskScore > 9 ? 'critical' : 'warning',
+      message: `High Risk Trade Detected: ${trade.instrument} in ${trade.region}`,
+      timestamp: new Date()
+    }))
 
-          return {
-            region,
-            score: response.data.riskScore,
-            factors: response.data.riskFactors
-          }
-        } catch (error) {
-          console.error(`Geopolitical risk assessment error for ${region}`, error)
-          return {
-            region,
-            score: 0,
-            factors: []
-          }
-        }
-      })
-    )
-
-    return risks
-  }
-
-  async fetchMacroeconomicIndicators(): Promise<MacroIndicator[]> {
-    const indicators = ['GDP Growth', 'Inflation Rate', 'Unemployment']
-    const countries = ['USA', 'Germany', 'Japan', 'UK', 'China']
-
-    const macroData: MacroIndicator[] = []
-
-    for (const country of countries) {
-      for (const indicator of indicators) {
-        try {
-          const response = await axios.get('/api/macro-indicator', {
-            params: { country, indicator }
-          })
-
-          macroData.push({
-            country,
-            indicator,
-            value: response.data.value,
-            trend: response.data.trend
-          })
-        } catch (error) {
-          console.error(`Macro indicator fetch error for ${country} - ${indicator}`, error)
-        }
-      }
+    // Send alerts to compliance team
+    try {
+      await axios.post('/api/compliance-alerts', { alerts })
+    } catch (error) {
+      console.error('Failed to send compliance alerts', error)
     }
 
-    return macroData
+    return alerts
   }
 
-  // Advanced machine learning risk prediction
-  async predictRiskScenarios(currencyPairs: CurrencyPair[]): Promise<any> {
+  async generateComplianceReport(trades: TradeActivity[]): Promise<any> {
     try {
-      const response = await axios.post('/api/risk-prediction', { currencyPairs })
+      const response = await axios.post('/api/compliance-report', { trades })
       return response.data
     } catch (error) {
-      console.error('Risk scenario prediction failed', error)
+      console.error('Compliance report generation failed', error)
       return null
     }
   }
@@ -194,14 +153,14 @@ export class CurrencyRiskAnalyzer {
 `
     }
   ],
-  "summary": "Advanced Multi-Currency Risk Correlation Dashboard with real-time currency pair analysis, geopolitical risk assessment, macroeconomic indicator tracking, and predictive risk modeling using Next.js, TypeScript, and machine learning techniques."
+  "summary": "Advanced Regulatory Compliance Dashboard with real-time trade risk assessment, compliance alert generation, and multi-jurisdiction regulatory monitoring using Next.js, TypeScript, and sophisticated risk scoring techniques."
 }
 
 Key Features:
-1. Real-time Currency Correlation Matrix
-2. Geopolitical Risk Scoring
-3. Macroeconomic Indicator Integration
-4. Predictive Risk Modeling
+1. Real-time Trade Risk Assessment
+2. Compliance Alert Generation
+3. Multi-Jurisdiction Regulatory Monitoring
+4. Automated Violation Flagging
 5. Modular, Scalable Architecture
 
 Technologies:
@@ -212,16 +171,15 @@ Technologies:
 - Comprehensive error handling
 
 The implementation provides:
-- Automated currency pair correlation calculation
-- Geopolitical risk assessment across regions
-- Macro-economic indicator tracking
-- Machine learning-powered risk prediction
+- Automated trade risk scoring
+- Compliance alert system
+- Risk assessment across trading instruments and regions
 - Periodic data refresh mechanism
 
 Recommended Next Steps:
 1. Implement backend API endpoints
 2. Add advanced visualization components
-3. Integrate machine learning models for risk prediction
+3. Enhance risk scoring algorithms
 4. Implement robust error handling and fallback mechanisms
 
 Would you like me to elaborate on any specific aspect of the implementation?
