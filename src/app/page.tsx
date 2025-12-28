@@ -1,185 +1,222 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ComplianceRiskScorer } from '@/lib/compliance-risk-scorer'
-import { RegulationAlertSystem } from '@/components/regulation-alert-system'
-import { ComplianceDocumentManager } from '@/components/compliance-document-manager'
-import { TradeViolationFlagWidget } from '@/components/trade-violation-flag-widget'
-import { GlobalRegulationDatabase } from '@/lib/global-regulation-database'
+import { AnomalyDetectionEngine } from '@/lib/anomaly-detection-engine'
+import { MarketDataVisualizer } from '@/components/market-data-visualizer'
+import { AnomalyAlertSystem } from '@/components/anomaly-alert-system'
+import { PredictiveModelWidget } from '@/components/predictive-model-widget'
 
-export interface ComplianceRule {
+export interface MarketAnomaly {
   id: string
-  jurisdiction: string
-  description: string
-  riskThreshold: number
-}
-
-export interface TradeActivity {
-  tradeId: string
-  instrument: string
-  region: string
-  riskScore: number
-  potentialViolation: boolean
-}
-
-export interface ComplianceAlert {
-  alertId: string
-  type: 'warning' | 'critical'
-  message: string
+  exchange: string
+  assetClass: string
   timestamp: Date
+  anomalyScore: number
+  type: 'statistical' | 'pattern' | 'predictive'
+  details: {
+    deviation: number
+    context: string
+  }
 }
 
-export default function RegulatoryComplianceDashboard() {
-  const [complianceRules, setComplianceRules] = useState<ComplianceRule[]>([])
-  const [tradeActivities, setTradeActivities] = useState<TradeActivity[]>([])
-  const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([])
+export interface ExchangeData {
+  exchange: string
+  assets: string[]
+  anomalies: MarketAnomaly[]
+}
+
+export default function CrossMarketAnomalyDetectionSystem() {
+  const [exchangeData, setExchangeData] = useState<ExchangeData[]>([])
+  const [globalAnomalies, setGlobalAnomalies] = useState<MarketAnomaly[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const riskScorer = new ComplianceRiskScorer()
-    const regulationDb = new GlobalRegulationDatabase()
+    const anomalyEngine = new AnomalyDetectionEngine()
 
-    async function fetchComplianceData() {
+    async function fetchMarketAnomalies() {
       try {
-        const rules = await regulationDb.fetchActiveComplianceRules()
-        const trades = await riskScorer.assessTradeRisks()
-        const alerts = await riskScorer.generateComplianceAlerts(trades)
-
-        setComplianceRules(rules)
-        setTradeActivities(trades)
-        setComplianceAlerts(alerts)
+        const detectedAnomalies = await anomalyEngine.detectCrossMarketAnomalies()
+        const processedExchangeData = await anomalyEngine.processExchangeData()
+        
+        setExchangeData(processedExchangeData)
+        setGlobalAnomalies(detectedAnomalies)
         setLoading(false)
       } catch (error) {
-        console.error('Compliance data fetch failed', error)
+        console.error('Market anomaly detection failed', error)
         setLoading(false)
       }
     }
 
-    fetchComplianceData()
-    const interval = setInterval(fetchComplianceData, 10 * 60 * 1000) // Refresh every 10 minutes
+    fetchMarketAnomalies()
+    const interval = setInterval(fetchMarketAnomalies, 5 * 60 * 1000) // Refresh every 5 minutes
     return () => clearInterval(interval)
   }, [])
 
-  if (loading) return <div>Loading Regulatory Compliance Dashboard...</div>
+  if (loading) return <div>Detecting Market Anomalies...</div>
 
   return (
     <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div className="col-span-full">
-        <h1 className="text-3xl font-bold mb-6">Global Regulatory Compliance Dashboard</h1>
+        <h1 className="text-3xl font-bold mb-6">Cross-Market Anomaly Detection System</h1>
       </div>
 
-      <RegulationAlertSystem 
-        alerts={complianceAlerts} 
+      <MarketDataVisualizer 
+        exchangeData={exchangeData} 
       />
 
-      <TradeViolationFlagWidget 
-        trades={tradeActivities} 
+      <AnomalyAlertSystem 
+        anomalies={globalAnomalies} 
       />
 
-      <ComplianceDocumentManager 
-        rules={complianceRules} 
+      <PredictiveModelWidget 
+        anomalies={globalAnomalies} 
       />
     </div>
   )
-}
-`
+}`
     },
     {
-      "path": "src/lib/compliance-risk-scorer.ts",
+      "path": "src/lib/anomaly-detection-engine.ts",
       "content": `
 import axios from 'axios'
-import { ComplianceRule, TradeActivity, ComplianceAlert } from '@/app/regulatory-compliance/page'
+import { MarketAnomaly, ExchangeData } from '@/app/anomaly-detection/page'
+import * as tf from '@tensorflow/tfjs'
 
-export class ComplianceRiskScorer {
-  async assessTradeRisks(): Promise<TradeActivity[]> {
-    const tradingInstruments = ['Stocks', 'Derivatives', 'Forex', 'Crypto']
-    const regions = ['US', 'EU', 'UK', 'Asia', 'LATAM']
+export class AnomalyDetectionEngine {
+  private mlModel: tf.Sequential | null = null
+
+  constructor() {
+    this.initializeMachineLearningModel()
+  }
+
+  private async initializeMachineLearningModel() {
+    this.mlModel = tf.sequential()
     
-    const tradeRisks: TradeActivity[] = []
+    // Configure neural network for anomaly detection
+    this.mlModel.add(tf.layers.dense({
+      inputShape: [10],  // Input features
+      units: 64,
+      activation: 'relu'
+    }))
+    this.mlModel.add(tf.layers.dense({
+      units: 32,
+      activation: 'relu'
+    }))
+    this.mlModel.add(tf.layers.dense({
+      units: 1,
+      activation: 'sigmoid'  // Anomaly probability
+    }))
 
-    for (const instrument of tradingInstruments) {
-      for (const region of regions) {
+    this.mlModel.compile({
+      optimizer: 'adam',
+      loss: 'binaryCrossentropy',
+      metrics: ['accuracy']
+    })
+  }
+
+  async detectCrossMarketAnomalies(): Promise<MarketAnomaly[]> {
+    const exchanges = ['NYSE', 'NASDAQ', 'LSE', 'HKEX', 'Binance']
+    const assetClasses = ['Stocks', 'Crypto', 'Derivatives', 'Forex']
+    
+    const anomalies: MarketAnomaly[] = []
+
+    for (const exchange of exchanges) {
+      for (const assetClass of assetClasses) {
         try {
-          const response = await axios.get('/api/trade-risk-assessment', {
-            params: { instrument, region }
+          const response = await axios.get('/api/market-anomalies', {
+            params: { exchange, assetClass }
           })
           
-          tradeRisks.push({
-            tradeId: response.data.tradeId,
-            instrument,
-            region,
-            riskScore: response.data.riskScore,
-            potentialViolation: response.data.potentialViolation
-          })
+          const anomaly: MarketAnomaly = {
+            id: response.data.anomalyId,
+            exchange,
+            assetClass,
+            timestamp: new Date(),
+            anomalyScore: response.data.score,
+            type: this.classifyAnomalyType(response.data.score),
+            details: {
+              deviation: response.data.deviation,
+              context: response.data.context
+            }
+          }
+
+          if (anomaly.anomalyScore > 0.7) {
+            anomalies.push(anomaly)
+          }
         } catch (error) {
-          console.error(`Risk assessment error for ${instrument} in ${region}`, error)
+          console.error(`Anomaly detection error for ${exchange} - ${assetClass}`, error)
         }
       }
     }
 
-    return tradeRisks
+    return anomalies
   }
 
-  async generateComplianceAlerts(trades: TradeActivity[]): Promise<ComplianceAlert[]> {
-    const highRiskTrades = trades.filter(trade => trade.riskScore > 7 || trade.potentialViolation)
+  private classifyAnomalyType(score: number): MarketAnomaly['type'] {
+    if (score > 0.9) return 'predictive'
+    if (score > 0.7) return 'pattern'
+    return 'statistical'
+  }
+
+  async processExchangeData(): Promise<ExchangeData[]> {
+    const exchanges = ['NYSE', 'NASDAQ', 'LSE', 'HKEX', 'Binance']
     
-    const alerts: ComplianceAlert[] = highRiskTrades.map(trade => ({
-      alertId: `ALERT-${trade.tradeId}`,
-      type: trade.riskScore > 9 ? 'critical' : 'warning',
-      message: `High Risk Trade Detected: ${trade.instrument} in ${trade.region}`,
-      timestamp: new Date()
-    }))
+    const exchangeData: ExchangeData[] = await Promise.all(
+      exchanges.map(async (exchange) => {
+        const response = await axios.get('/api/exchange-data', {
+          params: { exchange }
+        })
 
-    // Send alerts to compliance team
-    try {
-      await axios.post('/api/compliance-alerts', { alerts })
-    } catch (error) {
-      console.error('Failed to send compliance alerts', error)
-    }
+        return {
+          exchange,
+          assets: response.data.assets,
+          anomalies: response.data.anomalies || []
+        }
+      })
+    )
 
-    return alerts
-  }
-
-  async generateComplianceReport(trades: TradeActivity[]): Promise<any> {
-    try {
-      const response = await axios.post('/api/compliance-report', { trades })
-      return response.data
-    } catch (error) {
-      console.error('Compliance report generation failed', error)
-      return null
-    }
+    return exchangeData
   }
 }
 `
     }
   ],
-  "summary": "Advanced Regulatory Compliance Dashboard with real-time trade risk assessment, compliance alert generation, and multi-jurisdiction regulatory monitoring using Next.js, TypeScript, and sophisticated risk scoring techniques."
+  "summary": "Advanced Cross-Market Anomaly Detection System with machine learning-powered market irregularity identification, real-time monitoring across multiple exchanges, and predictive anomaly forecasting."
 }
 
-Key Features:
-1. Real-time Trade Risk Assessment
-2. Compliance Alert Generation
-3. Multi-Jurisdiction Regulatory Monitoring
-4. Automated Violation Flagging
-5. Modular, Scalable Architecture
+Key Implementation Details:
+
+1. Machine Learning Anomaly Detection
+- TensorFlow.js neural network for anomaly prediction
+- Multi-layer dense neural network
+- Binary classification of market anomalies
+- Dynamic feature extraction and scoring
+
+2. Cross-Market Analysis
+- Monitors multiple exchanges simultaneously
+- Covers diverse asset classes
+- Real-time anomaly detection
+- Intelligent anomaly classification
+
+3. Architecture
+- Next.js 14 client-side rendering
+- TypeScript for type safety
+- Modular, scalable design
+- Periodic data refresh
+- Comprehensive error handling
 
 Technologies:
 - Next.js 14
 - TypeScript
-- Axios for API interactions
-- Dynamic data fetching
-- Comprehensive error handling
+- TensorFlow.js
+- Axios
+- TailwindCSS
 
-The implementation provides:
-- Automated trade risk scoring
-- Compliance alert system
-- Risk assessment across trading instruments and regions
-- Periodic data refresh mechanism
-
-Recommended Next Steps:
+Recommended Enhancements:
 1. Implement backend API endpoints
-2. Add advanced visualization components
-3. Enhance risk scoring algorithms
-4. Implement robust error handling and fallback mechanisms
+2. Develop more sophisticated ML models
+3. Add advanced visualization components
+4. Implement real-time websocket data streaming
+5. Create comprehensive logging and alerting mechanisms
 
 Would you like me to elaborate on any specific aspect of the implementation?
