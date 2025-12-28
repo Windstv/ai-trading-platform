@@ -1,201 +1,207 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import ComplianceHeader from '@/components/compliance/ComplianceHeader';
-import RegulatoryDashboard from '@/components/compliance/RegulatoryDashboard';
-import TradeComplianceTable from '@/components/compliance/TradeComplianceTable';
-import RiskScoreWidget from '@/components/compliance/RiskScoreWidget';
-import { ComplianceService } from '@/services/compliance-service';
+import BlockchainAnalyticsService from '@/services/blockchain-analytics-service';
+import TransactionVolumeChart from '@/components/blockchain/TransactionVolumeChart';
+import WhaleTradingTracker from '@/components/blockchain/WhaleTradingTracker';
+import NetworkSelector from '@/components/blockchain/NetworkSelector';
+import TokenFlowVisualization from '@/components/blockchain/TokenFlowVisualization';
 
-export default function CompliancePage() {
-  const [complianceData, setComplianceData] = useState({
-    totalTrades: 0,
-    flaggedTrades: 0,
-    riskScore: 0,
-    regulatoryAlerts: []
+export default function BlockchainAnalyticsPage() {
+  const [network, setNetwork] = useState('ethereum');
+  const [analyticsData, setAnalyticsData] = useState({
+    transactionVolume: [],
+    whaleTransactions: [],
+    tokenFlows: [],
+    onChainMetrics: {
+      totalTransactions: 0,
+      averageTransactionValue: 0,
+      activeAddresses: 0
+    }
   });
 
-  const complianceService = new ComplianceService();
+  const analyticsService = new BlockchainAnalyticsService();
 
   useEffect(() => {
-    const fetchComplianceData = async () => {
-      const data = await complianceService.getDashboardData();
-      setComplianceData(data);
+    const fetchAnalyticsData = async () => {
+      try {
+        const data = await analyticsService.getNetworkAnalytics(network);
+        setAnalyticsData(data);
+      } catch (error) {
+        console.error('Failed to fetch blockchain analytics', error);
+      }
     };
 
-    fetchComplianceData();
-    const interval = setInterval(fetchComplianceData, 5 * 60 * 1000);
+    fetchAnalyticsData();
+    const interval = setInterval(fetchAnalyticsData, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [network]);
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
-      <ComplianceHeader />
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <RegulatoryDashboard stats={complianceData} />
-        <RiskScoreWidget riskScore={complianceData.riskScore} />
+      <div className="mb-6">
+        <NetworkSelector 
+          selectedNetwork={network} 
+          onNetworkChange={setNetwork} 
+        />
       </div>
 
-      <TradeComplianceTable 
-        trades={complianceData.regulatoryAlerts} 
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow-md rounded-lg p-4">
+          <h2 className="text-xl font-bold mb-4">Transaction Volume</h2>
+          <TransactionVolumeChart 
+            data={analyticsData.transactionVolume} 
+          />
+        </div>
+
+        <div className="bg-white shadow-md rounded-lg p-4">
+          <h2 className="text-xl font-bold mb-4">On-Chain Metrics</h2>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <p className="text-gray-600">Total Transactions</p>
+              <h3 className="text-2xl font-bold">
+                {analyticsData.onChainMetrics.totalTransactions.toLocaleString()}
+              </h3>
+            </div>
+            <div>
+              <p className="text-gray-600">Avg Transaction Value</p>
+              <h3 className="text-2xl font-bold">
+                ${analyticsData.onChainMetrics.averageTransactionValue.toFixed(2)}
+              </h3>
+            </div>
+            <div>
+              <p className="text-gray-600">Active Addresses</p>
+              <h3 className="text-2xl font-bold">
+                {analyticsData.onChainMetrics.activeAddresses.toLocaleString()}
+              </h3>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <WhaleTradingTracker 
+          whaleTransactions={analyticsData.whaleTransactions} 
+        />
+        
+        <TokenFlowVisualization 
+          tokenFlows={analyticsData.tokenFlows} 
+        />
+      </div>
     </div>
   );
 }`
     },
     {
-      "path": "src/services/compliance-service.ts",
+      "path": "src/services/blockchain-analytics-service.ts",
       "content": `import axios from 'axios';
-import { ComplianceRule, Trade, RegulatoryAlert } from '@/types/compliance';
 
-export class ComplianceService {
-  private apiBase = '/api/compliance';
+interface BlockchainAnalyticsParams {
+  network: string;
+  startDate?: Date;
+  endDate?: Date;
+}
 
-  async getDashboardData() {
+export default class BlockchainAnalyticsService {
+  private apiBase = '/api/blockchain-analytics';
+
+  async getNetworkAnalytics(network: string, params: BlockchainAnalyticsParams = {}) {
     try {
-      const response = await axios.get(`${this.apiBase}/dashboard`);
+      const response = await axios.get(`${this.apiBase}/network/${network}`, { 
+        params: {
+          network,
+          ...params
+        }
+      });
       return response.data;
     } catch (error) {
-      console.error('Dashboard data fetch failed', error);
-      return {
-        totalTrades: 0,
-        flaggedTrades: 0,
-        riskScore: 0,
-        regulatoryAlerts: []
-      };
+      console.error('Blockchain analytics fetch failed', error);
+      return this.getDefaultAnalyticsData();
     }
   }
 
-  async checkTradeCompliance(trade: Trade): Promise<RegulatoryAlert[]> {
+  async detectWhaleMovements(network: string, thresholdAmount: number) {
     try {
-      const response = await axios.post(`${this.apiBase}/check-trade`, trade);
+      const response = await axios.get(`${this.apiBase}/whale-movements`, {
+        params: { network, thresholdAmount }
+      });
       return response.data;
     } catch (error) {
-      console.error('Trade compliance check failed', error);
+      console.error('Whale movement detection failed', error);
       return [];
     }
   }
 
-  async getRegulatoryRules(jurisdiction: string): Promise<ComplianceRule[]> {
+  async analyzeSmartContractInteractions(contractAddress: string) {
     try {
-      const response = await axios.get(`${this.apiBase}/rules?jurisdiction=${jurisdiction}`);
+      const response = await axios.get(`${this.apiBase}/contract-interactions/${contractAddress}`);
       return response.data;
     } catch (error) {
-      console.error('Regulatory rules fetch failed', error);
-      return [];
+      console.error('Smart contract interaction analysis failed', error);
+      return null;
     }
+  }
+
+  private getDefaultAnalyticsData() {
+    return {
+      transactionVolume: [],
+      whaleTransactions: [],
+      tokenFlows: [],
+      onChainMetrics: {
+        totalTransactions: 0,
+        averageTransactionValue: 0,
+        activeAddresses: 0
+      }
+    };
   }
 }`
     },
     {
-      "path": "src/types/compliance.ts",
-      "content": `export interface ComplianceRule {
-  id: string;
-  jurisdiction: string;
-  category: 'KYC' | 'AML' | 'Trading' | 'Reporting';
-  description: string;
-  severity: 'Low' | 'Medium' | 'High';
+      "path": "src/types/blockchain-analytics.ts",
+      "content": `export interface TransactionData {
+  timestamp: Date;
+  volume: number;
+  price: number;
 }
 
-export interface Trade {
-  id: string;
-  instrument: string;
+export interface WhaleTransaction {
+  address: string;
   amount: number;
   timestamp: Date;
-  trader: string;
-  jurisdiction: string;
+  transactionHash: string;
 }
 
-export interface RegulatoryAlert {
-  id: string;
-  tradeId: string;
-  rule: ComplianceRule;
-  status: 'Pending' | 'Resolved' | 'Escalated';
+export interface TokenFlow {
+  source: string;
+  destination: string;
+  amount: number;
   timestamp: Date;
 }
 
-export interface ComplianceDashboardData {
-  totalTrades: number;
-  flaggedTrades: number;
-  riskScore: number;
-  regulatoryAlerts: RegulatoryAlert[];
-}`
-    },
-    {
-      "path": "src/components/compliance/RegulatoryDashboard.tsx",
-      "content": `import React from 'react';
-
-interface RegulatoryDashboardProps {
-  stats: {
-    totalTrades: number;
-    flaggedTrades: number;
-  };
+export interface OnChainMetrics {
+  totalTransactions: number;
+  averageTransactionValue: number;
+  activeAddresses: number;
 }
 
-const RegulatoryDashboard: React.FC<RegulatoryDashboardProps> = ({ stats }) => {
-  const flagPercentage = (stats.flaggedTrades / stats.totalTrades) * 100 || 0;
-
-  return (
-    <div className="bg-white shadow-md rounded-lg p-6">
-      <h2 className="text-xl font-bold mb-4">Regulatory Overview</h2>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-gray-600">Total Trades</p>
-          <h3 className="text-2xl font-bold">{stats.totalTrades}</h3>
-        </div>
-        
-        <div>
-          <p className="text-gray-600">Flagged Trades</p>
-          <h3 className={`text-2xl font-bold ${flagPercentage > 5 ? 'text-red-500' : 'text-green-500'}`}>
-            {stats.flaggedTrades} ({flagPercentage.toFixed(2)}%)
-          </h3>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default RegulatoryDashboard;`
+export type SupportedNetwork = 'ethereum' | 'bitcoin' | 'binance-smart-chain';`
     }
   ],
-  "summary": "Cross-Platform Trading Compliance Tracker with real-time regulatory monitoring, trade compliance verification, and risk assessment features leveraging TypeScript, React, and modern web technologies."
+  "summary": "Advanced Blockchain Transaction Analytics Platform with multi-network support, real-time tracking of transaction volumes, whale movements, and comprehensive on-chain metrics visualization using Next.js, TypeScript, and modern web technologies."
 }
 
-Key Components and Features:
+Key Features Implemented:
+1. Multi-network blockchain analytics
+2. Real-time transaction volume tracking
+3. Whale transaction monitoring
+4. On-chain metrics dashboard
+5. Flexible analytics service
+6. Comprehensive TypeScript typing
 
-1. Compliance Dashboard Page
-- Real-time regulatory monitoring
-- Trade compliance tracking
-- Risk score visualization
-
-2. Compliance Service
-- API integration for regulatory checks
-- Trade compliance verification
-- Regulatory rule retrieval
-
-3. TypeScript Type Definitions
-- Structured interfaces for compliance data
-- Strong typing for trades and alerts
-- Comprehensive data modeling
-
-4. Regulatory Dashboard Component
-- Visual representation of trade statistics
-- Flagged trade percentage indicator
-- Dynamic risk coloring
-
-Technologies:
-- Next.js 14
-- React
-- TypeScript
-- Axios for API calls
-- TailwindCSS
-
-Additional features to consider:
-- Real-time WebSocket updates
-- Machine learning risk scoring
-- Advanced filtering and reporting
-- Multi-jurisdiction support
+Recommended Next Steps:
+- Implement WebSocket for real-time updates
+- Add machine learning-based anomaly detection
+- Create more granular component visualizations
+- Implement advanced filtering and export capabilities
 
 Would you like me to elaborate on any specific aspect of the implementation?
