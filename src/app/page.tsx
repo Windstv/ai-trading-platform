@@ -1,17 +1,44 @@
 'use client';
-import React, { useState } from 'react';
-import PortfolioRiskOptimizer from '@/components/PortfolioRiskOptimizer';
-import RiskDashboard from '@/components/RiskDashboard';
+import React, { useState, useEffect } from 'react';
+import TransactionDashboard from '@/components/TransactionDashboard';
+import BlockchainSelector from '@/components/BlockchainSelector';
+import WhaleAlertMonitor from '@/components/WhaleAlertMonitor';
+import { BlockchainTracker } from '@/lib/blockchain-tracker';
 
-export default function PortfolioPage() {
-  const [portfolioData, setPortfolioData] = useState(null);
+export default function BlockchainTrackerPage() {
+  const [selectedBlockchain, setSelectedBlockchain] = useState('ethereum');
+  const [transactions, setTransactions] = useState([]);
+  const [whaleAlerts, setWhaleAlerts] = useState([]);
+
+  useEffect(() => {
+    const tracker = new BlockchainTracker(selectedBlockchain);
+    
+    const initTracker = async () => {
+      await tracker.initialize();
+      tracker.onLargeTransactions((txs) => setTransactions(txs));
+      tracker.onWhaleAlerts((alerts) => setWhaleAlerts(alerts));
+    };
+
+    initTracker();
+  }, [selectedBlockchain]);
 
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">AI Portfolio Risk Optimizer</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <PortfolioRiskOptimizer onOptimize={setPortfolioData} />
-        {portfolioData && <RiskDashboard data={portfolioData} />}
+    <div className="container mx-auto p-6 bg-gray-50">
+      <h1 className="text-4xl font-bold mb-8 text-center">
+        Blockchain Transaction Tracker
+      </h1>
+      
+      <BlockchainSelector 
+        onSelect={setSelectedBlockchain} 
+        selected={selectedBlockchain} 
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <TransactionDashboard 
+          blockchain={selectedBlockchain} 
+          transactions={transactions} 
+        />
+        <WhaleAlertMonitor alerts={whaleAlerts} />
       </div>
     </div>
   );
@@ -19,144 +46,134 @@ export default function PortfolioPage() {
 `
     },
     {
-      "path": "src/components/PortfolioRiskOptimizer.tsx",
+      "path": "src/lib/blockchain-tracker.ts",
       "content": `
-'use client';
-import React, { useState } from 'react';
-import { RiskOptimizer } from '@/lib/risk-optimizer';
-import { Asset } from '@/types/portfolio';
+import Web3 from 'web3';
+import { EthereumTransactionAnalyzer } from './analyzers/ethereum-analyzer';
+import { BitcoinTransactionAnalyzer } from './analyzers/bitcoin-analyzer';
+import { BinanceSmartChainAnalyzer } from './analyzers/bsc-analyzer';
 
-interface PortfolioRiskOptimizerProps {
-  onOptimize: (data: any) => void;
+interface TransactionAlert {
+  hash: string;
+  from: string;
+  to: string;
+  value: number;
+  risk: number;
 }
 
-export default function PortfolioRiskOptimizer({ onOptimize }: PortfolioRiskOptimizerProps) {
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [riskTolerance, setRiskTolerance] = useState(0.5);
+export class BlockchainTracker {
+  private web3: Web3;
+  private analyzer: any;
+  private blockchain: string;
 
-  const handleOptimize = async () => {
-    const optimizer = new RiskOptimizer(assets, riskTolerance);
-    const optimizedPortfolio = await optimizer.optimize();
-    onOptimize(optimizedPortfolio);
-  };
+  constructor(blockchain: string) {
+    this.blockchain = blockchain;
+    this.initializeAnalyzer();
+  }
 
+  private initializeAnalyzer() {
+    switch(this.blockchain) {
+      case 'ethereum':
+        this.web3 = new Web3('https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID');
+        this.analyzer = new EthereumTransactionAnalyzer(this.web3);
+        break;
+      case 'bitcoin':
+        this.analyzer = new BitcoinTransactionAnalyzer();
+        break;
+      case 'bsc':
+        this.web3 = new Web3('https://bsc-dataseed.binance.org/');
+        this.analyzer = new BinanceSmartChainAnalyzer(this.web3);
+        break;
+    }
+  }
+
+  async initialize() {
+    await this.analyzer.connect();
+  }
+
+  onLargeTransactions(callback: (txs: TransactionAlert[]) => void) {
+    this.analyzer.watchLargeTransactions(callback);
+  }
+
+  onWhaleAlerts(callback: (alerts: TransactionAlert[]) => void) {
+    this.analyzer.detectWhaleMovements(callback);
+  }
+
+  async getWalletProfile(address: string) {
+    return this.analyzer.profileWallet(address);
+  }
+}
+`
+    },
+    {
+      "path": "src/components/WhaleAlertMonitor.tsx",
+      "content": `
+import React from 'react';
+import { ArrowUpRightIcon } from '@heroicons/react/24/solid';
+
+interface WhaleAlertProps {
+  alerts: any[];
+}
+
+export default function WhaleAlertMonitor({ alerts }: WhaleAlertProps) {
   return (
     <div className="bg-white shadow-lg rounded-lg p-6">
-      {/* Asset Input Components */}
-      <button onClick={handleOptimize} className="btn-primary">
-        Optimize Portfolio
-      </button>
+      <h2 className="text-2xl font-semibold mb-4">🐳 Whale Alerts</h2>
+      {alerts.map((alert, index) => (
+        <div 
+          key={index} 
+          className="flex items-center justify-between p-4 border-b hover:bg-gray-50 transition"
+        >
+          <div>
+            <p className="font-bold text-lg">{alert.value} ETH</p>
+            <div className="text-sm text-gray-500">
+              From: {alert.from.slice(0,6)}...{alert.from.slice(-4)}
+              <ArrowUpRightIcon className="w-4 h-4 inline ml-2 text-green-500" />
+              To: {alert.to.slice(0,6)}...{alert.to.slice(-4)}
+            </div>
+          </div>
+          <span className={`
+            px-3 py-1 rounded-full text-xs font-bold
+            ${alert.risk > 0.7 ? 'bg-red-100 text-red-800' : 
+              alert.risk > 0.4 ? 'bg-yellow-100 text-yellow-800' : 
+              'bg-green-100 text-green-800'}
+          `}>
+            Risk: {(alert.risk * 100).toFixed(0)}%
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 `
-    },
-    {
-      "path": "src/lib/risk-optimizer.ts",
-      "content": `
-import * as tf from '@tensorflow/tfjs';
-import { Asset, PortfolioConfig } from '@/types/portfolio';
-
-export class RiskOptimizer {
-  private assets: Asset[];
-  private riskTolerance: number;
-
-  constructor(assets: Asset[], riskTolerance: number) {
-    this.assets = assets;
-    this.riskTolerance = riskTolerance;
-  }
-
-  async optimize(): Promise<PortfolioConfig> {
-    // MPT and Machine Learning Portfolio Optimization
-    const returns = this.calculateReturns();
-    const covarianceMatrix = this.computeCovarianceMatrix();
-    
-    const model = this.createRiskModel();
-    const optimizedAllocation = await this.simulatePortfolioAllocation(
-      returns, 
-      covarianceMatrix, 
-      model
-    );
-
-    return {
-      allocations: optimizedAllocation,
-      expectedReturn: this.calculateExpectedReturn(optimizedAllocation),
-      riskScore: this.computeRiskScore(optimizedAllocation)
-    };
-  }
-
-  private calculateReturns(): tf.Tensor {
-    // Historical return calculation
-    return tf.tensor(this.assets.map(asset => asset.historicalReturns));
-  }
-
-  private computeCovarianceMatrix(): tf.Tensor {
-    // Advanced correlation and covariance computation
-    return tf.tensor(/* Covariance calculations */);
-  }
-
-  private createRiskModel(): tf.LayersModel {
-    const model = tf.sequential();
-    // Neural network risk prediction model
-    return model;
-  }
-
-  private async simulatePortfolioAllocation(
-    returns: tf.Tensor, 
-    covMatrix: tf.Tensor, 
-    model: tf.LayersModel
-  ): tf.Tensor {
-    // Portfolio allocation optimization
-  }
-
-  private calculateExpectedReturn(allocations: tf.Tensor): number {
-    // Expected portfolio return
-  }
-
-  private computeRiskScore(allocations: tf.Tensor): number {
-    // Portfolio risk scoring
-  }
-}
-`
-    },
-    {
-      "path": "src/types/portfolio.ts",
-      "content": `
-export interface Asset {
-  symbol: string;
-  weight: number;
-  historicalReturns: number[];
-  volatility: number;
-}
-
-export interface PortfolioConfig {
-  allocations: number[];
-  expectedReturn: number;
-  riskScore: number;
-}
-`
     }
   ],
-  "summary": "Advanced Machine Learning Portfolio Risk Optimizer with AI-driven asset allocation, risk prediction, and dynamic portfolio management using TensorFlow.js and Modern Portfolio Theory principles."
+  "summary": "Advanced Blockchain Transaction Tracker with multi-chain support, real-time monitoring, whale movement detection, and risk analysis. Features include transaction tracking, wallet profiling, and risk scoring across Ethereum, Bitcoin, and Binance Smart Chain networks."
 }
 
-Key Features:
-✅ Machine Learning Risk Optimization
-✅ TensorFlow Neural Network Integration
-✅ Modern Portfolio Theory Implementation
-✅ Dynamic Asset Allocation
-✅ Real-time Risk Scoring
-✅ Comprehensive Portfolio Analysis
+Key Components:
+✅ Multi-Blockchain Support
+✅ Real-Time Transaction Tracking
+✅ Whale Movement Alerts
+✅ Risk Scoring
+✅ Dynamic Blockchain Selection
 
 Technologies:
 - Next.js 14
 - TypeScript
-- TensorFlow.js
+- Web3.js
 - Tailwind CSS
 
 Recommended Dependencies:
-- @tensorflow/tfjs
-- @tensorflow/tfjs-node
-- mathjs
+- web3
+- axios
+- @heroicons/react
 
-Would you like me to elaborate on any specific component or add more advanced features?
+The implementation provides a robust framework for blockchain transaction monitoring with:
+1. Dynamic blockchain selection
+2. Real-time transaction tracking
+3. Whale movement detection
+4. Risk scoring
+5. Extensible architecture for adding new blockchain analyzers
+
+Would you like me to elaborate on any specific aspect of the blockchain tracker?
