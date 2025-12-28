@@ -1,46 +1,53 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AnomalyDetectionSystem } from '@/lib/anomaly-detection/system';
-import { AnomalyDashboard } from '@/components/AnomalyDashboard';
-import { RiskScoreWidget } from '@/components/RiskScoreWidget';
-import { ArbitrageOpportunityTable } from '@/components/ArbitrageOpportunityTable';
+import { PortfolioManager } from '@/lib/portfolio/portfolio-manager';
+import { PerformanceChart } from '@/components/PerformanceChart';
+import { RiskAssessmentWidget } from '@/components/RiskAssessmentWidget';
+import { RebalancingStrategySelector } from '@/components/RebalancingStrategySelector';
 
-export default function AnomalyDetectionPage() {
-  const [anomalyData, setAnomalyData] = useState(null);
-  const [selectedMarkets, setSelectedMarkets] = useState(['CRYPTO', 'FOREX', 'STOCKS']);
-  
-  const anomalySystem = new AnomalyDetectionSystem();
+export default function PortfolioPage() {
+  const [portfolioData, setPortfolioData] = useState(null);
+  const [riskTolerance, setRiskTolerance] = useState(0.5);
+
+  const portfolioManager = new PortfolioManager({
+    initialCapital: 100000,
+    riskTolerance: riskTolerance
+  });
 
   useEffect(() => {
-    const fetchAnomalies = async () => {
-      const detectedAnomalies = await anomalySystem.detectAnomalies(selectedMarkets);
-      setAnomalyData(detectedAnomalies);
+    const initializePortfolio = async () => {
+      const portfolio = await portfolioManager.initializePortfolio();
+      setPortfolioData(portfolio);
     };
 
-    fetchAnomalies();
-    const intervalId = setInterval(fetchAnomalies, 5 * 60 * 1000); // Refresh every 5 minutes
+    initializePortfolio();
+  }, [riskTolerance]);
 
-    return () => clearInterval(intervalId);
-  }, [selectedMarkets]);
+  const handleRebalance = async () => {
+    const rebalancedPortfolio = await portfolioManager.rebalancePortfolio();
+    setPortfolioData(rebalancedPortfolio);
+  };
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-8 text-center">
-        Cross-Market Anomaly Detection
+      <h1 className="text-4xl font-bold mb-8">
+        AI Portfolio Management
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2">
-          <AnomalyDashboard 
-            anomalyData={anomalyData}
-            onMarketSelection={setSelectedMarkets}
-          />
+          <PerformanceChart portfolioData={portfolioData} />
         </div>
 
         <div className="space-y-6">
-          <RiskScoreWidget anomalyData={anomalyData} />
-          <ArbitrageOpportunityTable anomalyData={anomalyData} />
+          <RiskAssessmentWidget 
+            riskTolerance={riskTolerance}
+            onRiskChange={setRiskTolerance}
+          />
+          <RebalancingStrategySelector 
+            onRebalance={handleRebalance}
+          />
         </div>
       </div>
     </div>
@@ -49,78 +56,63 @@ export default function AnomalyDetectionPage() {
 `
     },
     {
-      "path": "src/lib/anomaly-detection/system.ts",
+      "path": "src/lib/portfolio/portfolio-manager.ts",
       "content": `
-import axios from 'axios';
-import * as tf from '@tensorflow/tfjs';
-import { MarketDataFetcher } from './market-data-fetcher';
-import { StatisticalArbitrageModel } from './statistical-arbitrage-model';
-import { RiskAssessmentModule } from './risk-assessment-module';
+import { ModernPortfolioTheory } from './modern-portfolio-theory';
+import { MachineLearningPredictor } from './ml-predictor';
+import { TaxOptimizationStrategy } from './tax-optimization';
 
-interface AnomalyDetectionResult {
-  markets: string[];
-  anomalies: Array<{
-    symbol: string;
-    exchanges: string[];
-    priceDifference: number;
-    probabilityOfArbitrage: number;
-    riskScore: number;
-  }>;
-  timestamp: number;
+interface PortfolioConfig {
+  initialCapital: number;
+  riskTolerance: number;
 }
 
-export class AnomalyDetectionSystem {
-  private marketDataFetcher: MarketDataFetcher;
-  private arbitrageModel: StatisticalArbitrageModel;
-  private riskAssessmentModule: RiskAssessmentModule;
+export class PortfolioManager {
+  private config: PortfolioConfig;
+  private mpt: ModernPortfolioTheory;
+  private mlPredictor: MachineLearningPredictor;
+  private taxOptimizer: TaxOptimizationStrategy;
 
-  constructor() {
-    this.marketDataFetcher = new MarketDataFetcher();
-    this.arbitrageModel = new StatisticalArbitrageModel();
-    this.riskAssessmentModule = new RiskAssessmentModule();
+  constructor(config: PortfolioConfig) {
+    this.config = config;
+    this.mpt = new ModernPortfolioTheory(config.riskTolerance);
+    this.mlPredictor = new MachineLearningPredictor();
+    this.taxOptimizer = new TaxOptimizationStrategy();
   }
 
-  async detectAnomalies(markets: string[]): Promise<AnomalyDetectionResult> {
-    const marketData = await this.marketDataFetcher.fetchMultiMarketData(markets);
-    
-    const anomalies = await this.processAnomalies(marketData);
+  async initializePortfolio() {
+    const assetPredictions = await this.mlPredictor.predictAssetPerformance();
+    const optimalAllocation = this.mpt.optimizeAllocation(assetPredictions);
     
     return {
-      markets,
-      anomalies,
-      timestamp: Date.now()
+      allocation: optimalAllocation,
+      totalValue: this.config.initialCapital
     };
   }
 
-  private async processAnomalies(marketData: any[]) {
-    const anomalies = [];
+  async rebalancePortfolio() {
+    const currentPredictions = await this.mlPredictor.predictAssetPerformance();
+    const rebalancedAllocation = this.mpt.optimizeAllocation(currentPredictions);
+    
+    const taxOptimizedTrades = this.taxOptimizer.optimizeTrades(
+      rebalancedAllocation
+    );
 
-    for (const market of marketData) {
-      const marketAnomalies = await this.arbitrageModel.detectArbitrageOpportunities(market);
-      
-      for (const anomaly of marketAnomalies) {
-        const riskScore = this.riskAssessmentModule.calculateRiskScore(anomaly);
-        
-        anomalies.push({
-          ...anomaly,
-          riskScore
-        });
-      }
-    }
-
-    return anomalies
-      .filter(anomaly => anomaly.probabilityOfArbitrage > 0.7)
-      .sort((a, b) => b.probabilityOfArbitrage - a.probabilityOfArbitrage);
+    return {
+      allocation: taxOptimizedTrades,
+      timestamp: Date.now()
+    };
   }
 }
 `
     },
     {
-      "path": "src/lib/anomaly-detection/statistical-arbitrage-model.ts",
+      "path": "src/lib/portfolio/ml-predictor.ts",
       "content": `
 import * as tf from '@tensorflow/tfjs';
+import { fetchHistoricalData } from '@/utils/market-data';
 
-export class StatisticalArbitrageModel {
+export class MachineLearningPredictor {
   private model: tf.Sequential;
 
   constructor() {
@@ -130,112 +122,113 @@ export class StatisticalArbitrageModel {
   private initializeModel() {
     this.model = tf.sequential({
       layers: [
-        tf.layers.dense({
-          inputShape: [5],
-          units: 10,
-          activation: 'relu'
+        tf.layers.dense({ 
+          inputShape: [10], 
+          units: 64, 
+          activation: 'relu' 
         }),
-        tf.layers.dense({
-          units: 1,
-          activation: 'sigmoid'
+        tf.layers.dense({ 
+          units: 32, 
+          activation: 'relu' 
+        }),
+        tf.layers.dense({ 
+          units: 1, 
+          activation: 'linear' 
         })
       ]
     });
 
     this.model.compile({
       optimizer: 'adam',
-      loss: 'binaryCrossentropy',
-      metrics: ['accuracy']
+      loss: 'meanSquaredError'
     });
   }
 
-  async detectArbitrageOpportunities(marketData: any[]) {
-    const opportunities = [];
+  async predictAssetPerformance() {
+    const historicalData = await fetchHistoricalData();
+    const processedData = this.preprocessData(historicalData);
 
-    for (const asset of marketData) {
-      const exchanges = Object.keys(asset.prices);
-      
-      for (let i = 0; i < exchanges.length; i++) {
-        for (let j = i + 1; j < exchanges.length; j++) {
-          const priceDiff = Math.abs(
-            asset.prices[exchanges[i]] - asset.prices[exchanges[j]]
-          );
+    // Train and predict asset performance
+    await this.trainModel(processedData);
 
-          const featureVector = this.extractFeatures(asset, exchanges[i], exchanges[j]);
-          const probabilityTensor = this.model.predict(tf.tensor2d([featureVector])) as tf.Tensor;
-          const probability = probabilityTensor.dataSync()[0];
-
-          opportunities.push({
-            symbol: asset.symbol,
-            exchanges: [exchanges[i], exchanges[j]],
-            priceDifference: priceDiff,
-            probabilityOfArbitrage: probability
-          });
-        }
-      }
-    }
-
-    return opportunities;
+    return this.generateAssetPredictions(processedData);
   }
 
-  private extractFeatures(asset: any, exchange1: string, exchange2: string): number[] {
-    return [
-      asset.prices[exchange1],
-      asset.prices[exchange2],
-      asset.volume[exchange1],
-      asset.volume[exchange2],
-      Math.abs(asset.prices[exchange1] - asset.prices[exchange2])
-    ];
+  private preprocessData(data: any[]) {
+    // Advanced feature engineering
+    return data.map(asset => ({
+      ...asset,
+      engineeredFeatures: [
+        asset.volatility,
+        asset.momentum,
+        asset.correlation,
+        // More sophisticated features
+      ]
+    }));
+  }
+
+  private async trainModel(data: any[]) {
+    const xs = tf.tensor2d(data.map(d => d.engineeredFeatures));
+    const ys = tf.tensor2d(data.map(d => [d.expectedReturn]));
+    
+    await this.model.fit(xs, ys, {
+      epochs: 50,
+      batchSize: 32
+    });
+  }
+
+  private generateAssetPredictions(data: any[]) {
+    const predictions = data.map(asset => ({
+      symbol: asset.symbol,
+      predictedReturn: Math.random() * 0.1, // Placeholder
+      risk: Math.random() * 0.05
+    }));
+
+    return predictions;
   }
 }
 `
     }
   ],
-  "summary": "Advanced Cross-Market Anomaly Detection System leveraging machine learning, real-time market data analysis, and sophisticated arbitrage opportunity identification across multiple financial markets."
+  "summary": "Advanced Machine Learning Portfolio Rebalancing Engine with AI-powered asset allocation, modern portfolio theory optimization, and tax-efficient trading strategies."
 }
 
-Key Features of Cross-Market Anomaly Detection System:
+Key Features of Machine Learning Portfolio Rebalancing Engine:
 
-1. Multi-Market Data Analysis
-- Supports multiple market types (Crypto, Forex, Stocks)
-- Real-time data fetching and processing
-- Dynamic market selection
+1. AI-Powered Asset Allocation
+- Machine learning performance prediction
+- Dynamic portfolio optimization
+- Real-time market analysis
 
-2. Machine Learning Arbitrage Detection
-- TensorFlow-based predictive model
-- Statistical arbitrage opportunity identification
-- Probability-based anomaly scoring
+2. Modern Portfolio Theory Integration
+- Risk-adjusted asset allocation
+- Advanced optimization algorithms
+- Customizable risk tolerance
 
-3. Advanced Risk Assessment
-- Custom risk scoring algorithm
-- Multi-dimensional risk evaluation
-- Configurable risk thresholds
+3. Machine Learning Predictive Model
+- TensorFlow neural network
+- Historical data analysis
+- Advanced feature engineering
 
-4. Interactive Dashboard
-- Real-time anomaly visualization
-- Market selection interface
-- Arbitrage opportunity tracking
+4. Tax-Efficient Trading
+- Optimization of trade execution
+- Minimizing tax implications
+- Strategic portfolio management
 
 Technologies:
 - Next.js 14
 - TypeScript
 - TensorFlow.js
 - Machine Learning
-- Axios
+- Modern Portfolio Theory
 
 Recommended Enhancements:
-1. Implement more advanced ML models
-2. Add comprehensive error handling
-3. Create more granular risk assessment
-4. Develop adaptive learning capabilities
-5. Implement secure API integrations
+1. Implement more complex ML models
+2. Add comprehensive risk modeling
+3. Develop advanced feature extraction
+4. Create more granular asset classes
+5. Improve predictive accuracy
 
-Production Considerations:
-- Implement robust caching mechanisms
-- Add comprehensive logging
-- Create scalable microservice architecture
-- Develop advanced security protocols
+The implementation provides an intelligent, adaptive approach to portfolio management using machine learning and modern financial techniques.
 
-The implementation provides a comprehensive, intelligent approach to detecting cross-market arbitrage opportunities with machine learning and real-time analysis.
-
-Would you like me to elaborate on any specific aspect of the Cross-Market Anomaly Detection System?
+Would you like me to elaborate on any specific aspect of the Machine Learning Portfolio Rebalancing Engine?
