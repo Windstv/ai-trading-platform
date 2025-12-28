@@ -1,1 +1,847 @@
-'use client';\n\nimport React, { useState, useEffect, useCallback } from 'react';\nimport { useTradeStore } from '@/stores/tradeStore';\nimport { ExchangeAPI, ExchangeConnection } from '@/lib/exchange-api';\nimport OrderExecutionPanel from '@/components/trade/OrderExecutionPanel';\nimport TradeHistoryTable from '@/components/trade/TradeHistoryTable';\nimport RealTimeMarketData from '@/components/trade/RealTimeMarketData';\nimport RiskManagementWidget from '@/components/trade/RiskManagementWidget';\nimport PositionMonitor from '@/components/trade/PositionMonitor';\nimport ExchangeConnectionStatus from '@/components/trade/ExchangeConnectionStatus';\nimport { OrderType, OrderSide, TimeInForce, OrderStatus, Trade } from '@/types/trade';\n\nexport default function TradeExecutionPage() {\n  const {\n    selectedExchange,\n    selectedSymbol,\n    orders,\n    trades,\n    positions,\n    connectionStatus,\n    addOrder,\n    updateOrder,\n    addTrade,\n    updatePosition,\n    setConnectionStatus,\n    setMarketData,\n    setSelectedSymbol\n  } = useTradeStore();\n  \n  const [isConnecting, setIsConnecting] = useState(false);\n  const [apiError, setApiError] = useState<string | null>(null);\n  const [marketData, setLocalMarketData] = useState<any>(null);\n  \n  // Initialize exchange connection\n  const connectToExchange = useCallback(async () => {\n    if (!selectedExchange) {\n      setApiError('Please select an exchange first');\n      return;\n    }\n    \n    setIsConnecting(true);\n    setApiError(null);\n    \n    try {\n      await ExchangeAPI.connect(selectedExchange);\n      setConnectionStatus('connected');\n      \n      // Subscribe to market data\n      if (selectedSymbol) {\n        await ExchangeAPI.subscribeToMarketData(selectedSymbol, (data) => {\n          setMarketData(data);\n          setLocalMarketData(data);\n        });\n      }\n      \n    } catch (error: any) {\n      console.error('Connection failed:', error);\n      setApiError(`Failed to connect to ${selectedExchange}: ${error.message}`);\n      setConnectionStatus('disconnected');\n    } finally {\n      setIsConnecting(false);\n    }\n  }, [selectedExchange, selectedSymbol, setConnectionStatus, setMarketData]);\n  \n  // Disconnect from exchange\n  const disconnectFromExchange = useCallback(async () => {\n    try {\n      await ExchangeAPI.disconnect();\n      setConnectionStatus('disconnected');\n      setLocalMarketData(null);\n    } catch (error: any) {\n      console.error('Disconnection failed:', error);\n      setApiError(`Failed to disconnect: ${error.message}`);\n    }\n  }, [setConnectionStatus]);\n  \n  // Handle symbol change\n  const handleSymbolChange = useCallback(async (symbol: string) => {\n    setSelectedSymbol(symbol);\n    \n    if (connectionStatus === 'connected') {\n      try {\n        // Unsubscribe from previous symbol\n        if (selectedSymbol) {\n          await ExchangeAPI.unsubscribeFromMarketData(selectedSymbol);\n        }\n        \n        // Subscribe to new symbol\n        await ExchangeAPI.subscribeToMarketData(symbol, (data) => {\n          setMarketData(data);\n          setLocalMarketData(data);\n        });\n      } catch (error: any) {\n        console.error('Symbol change failed:', error);\n        setApiError(`Failed to change symbol: ${error.message}`);\n      }\n    }\n  }, [connectionStatus, selectedSymbol, setMarketData, setSelectedSymbol]);\n  \n  // Handle order execution\n  const handleOrderSubmit = useCallback(async (orderData: {\n    symbol: string;\n    side: OrderSide;\n    type: OrderType;\n    quantity: number;\n    price?: number;\n    stopPrice?: number;\n    timeInForce?: TimeInForce;\n  }) => {\n    if (connectionStatus !== 'connected') {\n      setApiError('Not connected to exchange');\n      return;\n    }\n    \n    try {\n      // Create pending order\n      const pendingOrder = {\n        id: `order_${Date.now()}`,\n        ...orderData,\n        status: 'pending' as OrderStatus,\n        timestamp: new Date().toISOString(),\n        exchange: selectedExchange,\n        filledQuantity: 0,\n        remainingQuantity: orderData.quantity,\n        avgPrice: 0,\n        fees: 0\n      };\n      \n      addOrder(pendingOrder);\n      \n      // Execute order via exchange API\n      const result = await ExchangeAPI.executeOrder({\n        ...orderData,\n        exchange: selectedExchange\n      });\n      \n      // Update order status\n      updateOrder(pendingOrder.id, {\n        status: result.status,\n        orderId: result.orderId,\n        filledQuantity: result.filledQuantity,\n        remainingQuantity: result.remainingQuantity,\n        avgPrice: result.avgPrice,\n        fees: result.fees,\n        lastUpdate: new Date().toISOString()\n      });\n      \n      // If order was filled, add to trade history\n      if (result.filledQuantity > 0) {\n        const trade: Trade = {\n          id: `trade_${Date.now()}`,\n          orderId: pendingOrder.id,\n          exchangeOrderId: result.orderId,\n          symbol: orderData.symbol,\n          side: orderData.side,\n          quantity: result.filledQuantity,\n          price: result.avgPrice,\n          fees: result.fees,\n          timestamp: new Date().toISOString(),\n          exchange: selectedExchange\n        };\n        \n        addTrade(trade);\n        \n        // Update position\n        updatePosition({\n          symbol: orderData.symbol,\n          side: orderData.side,\n          quantity: result.filledQuantity,\n          avgEntryPrice: result.avgPrice,\n          unrealizedPnl: 0,\n          realizedPnl: 0\n        });\n      }\n      \n    } catch (error: any) {\n      console.error('Order execution failed:', error);\n      setApiError(`Order failed: ${error.message}`);\n      \n      // Update order status to failed\n      if (orderData.symbol) {\n        updateOrder(`order_${Date.now()}`, {\n          status: 'failed' as OrderStatus,\n          error: error.message\n        });\n      }\n    }\n  }, [connectionStatus, selectedExchange, addOrder, updateOrder, addTrade, updatePosition]);\n  \n  // Handle order cancellation\n  const handleCancelOrder = useCallback(async (orderId: string) => {\n    try {\n      const order = orders.find(o => o.id === orderId);\n      if (!order) throw new Error('Order not found');\n      \n      if (order.orderId) {\n        await ExchangeAPI.cancelOrder(order.orderId);\n      }\n      \n      updateOrder(orderId, { \n        status: 'cancelled' as OrderStatus,\n        lastUpdate: new Date().toISOString()\n      });\n    } catch (error: any) {\n      console.error('Cancel order failed:', error);\n      setApiError(`Cancel failed: ${error.message}`);\n    }\n  }, [orders, updateOrder]);\n  \n  // Cleanup on unmount\n  useEffect(() => {\n    return () => {\n      if (connectionStatus === 'connected') {\n        ExchangeAPI.disconnect().catch(console.error);\n      }\n    };\n  }, [connectionStatus]);\n  \n  return (\n    <div className=\"min-h-screen bg-gray-900 text-white p-4 md:p-6\">\n      <div className=\"container mx-auto\">\n        <header className=\"mb-6\">\n          <h1 className=\"text-2xl md:text-3xl font-bold text-gray-100\">Trade Execution Module</h1>\n          <p className=\"text-gray-400 mt-2\">Execute trades with real-time market data and risk management</p>\n        </header>\n        \n        {/* Connection Status */}\n        <ExchangeConnectionStatus \n          status={connectionStatus}\n          isConnecting={isConnecting}\n          exchange={selectedExchange}\n          symbol={selectedSymbol}\n          error={apiError}\n          onConnect={connectToExchange}\n          onDisconnect={disconnectFromExchange}\n          onSymbolChange={handleSymbolChange}\n        />\n        \n        <div className=\"grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6\">\n          {/* Left Column - Trading Interface */}\n          <div className=\"lg:col-span-2 space-y-4 md:space-y-6\">\n            {/* Real-time Market Data */}\n            <div className=\"bg-gray-800 rounded-xl shadow-lg overflow-hidden\">\n              <RealTimeMarketData \n                symbol={selectedSymbol}\n                marketData={marketData}\n                onSymbolChange={handleSymbolChange}\n              />\n            </div>\n            \n            {/* Order Execution Panel */}\n            <div className=\"bg-gray-800 rounded-xl shadow-lg\">\n              <OrderExecutionPanel \n                onSubmit={handleOrderSubmit}\n                isConnected={connectionStatus === 'connected'}\n                selectedSymbol={selectedSymbol}\n                marketData={marketData}\n                onSymbolChange={handleSymbolChange}\n              />\n            </div>\n            \n            {/* Position Monitor */}\n            <div className=\"bg-gray-800 rounded-xl shadow-lg\">\n              <PositionMonitor \n                positions={positions}\n                marketData={marketData}\n              />\n            </div>\n          </div>\n          \n          {/* Right Column - Risk & History */}\n          <div className=\"space-y-4 md:space-y-6\">\n            {/* Risk Management Widget */}\n            <div className=\"bg-gray-800 rounded-xl shadow-lg\">\n              <RiskManagementWidget \n                positions={positions}\n                trades={trades}\n                selectedSymbol={selectedSymbol}\n                marketData={marketData}\n              />\n            </div>\n            \n            {/* Trade History */}\n            <div className=\"bg-gray-800 rounded-xl shadow-lg\">\n              <TradeHistoryTable \n                trades={trades}\n                selectedSymbol={selectedSymbol}\n              />\n            </div>\n            \n            {/* Order Status Summary */}\n            <div className=\"bg-gray-800 p-4 md:p-6 rounded-xl shadow-lg\">\n              <h3 className=\"text-lg font-semibold mb-4 text-gray-200\">Order Status</h3>\n              <div className=\"space-y-3\">\n                <div className=\"flex justify-between items-center\">\n                  <span className=\"text-gray-400\">Pending Orders</span>\n                  <span className=\"text-yellow-500 font-medium\">\n                    {orders.filter(o => o.status === 'pending').length}\n                  </span>\n                </div>\n                <div className=\"flex justify-between items-center\">\n                  <span className=\"text-gray-400\">Filled Today</span>\n                  <span className=\"text-green-500 font-medium\">\n                    {trades.filter(t => \n                      new Date(t.timestamp).toDateString() === new Date().toDateString()\n                    ).length}\n                  </span>\n                </div>\n                <div className=\"flex justify-between items-center\">\n                  <span className=\"text-gray-400\">Active Positions</span>\n                  <span className=\"text-blue-500 font-medium\">\n                    {positions.length}\n                  </span>\n                </div>\n              </div>\n            </div>\n          </div>\n        </div>\n      </div>\n    </div>\n  );\n}\n"     },     {       "path": "components/trade/OrderExecutionPanel.tsx",       "content": "'use client';\n\nimport React, { useState, useEffect } from 'react';\nimport { OrderType, OrderSide, TimeInForce } from '@/types/trade';\n\ntype OrderExecutionPanelProps = {\n  onSubmit: (orderData: {\n    symbol: string;\n    side: OrderSide;\n    type: OrderType;\n    quantity: number;\n    price?: number;\n    stopPrice?: number;\n    timeInForce?: TimeInForce;\n  }) => void;\n  isConnected: boolean;\n  selectedSymbol: string | null;\n  marketData: any;\n  onSymbolChange: (symbol: string) => void;\n};\n\ntype OrderFormData = {\n  symbol: string;\n  side: OrderSide;\n  type: OrderType;\n  quantity: string;\n  price: string;\n  stopPrice: string;\n  timeInForce: TimeInForce;\n};\n\nexport default function OrderExecutionPanel({\n  onSubmit,\n  isConnected,\n  selectedSymbol,\n  marketData,\n  onSymbolChange\n}: OrderExecutionPanelProps) {\n  const [formData, setFormData] = useState<OrderFormData>({\n    symbol: selectedSymbol || '',\n    side: 'buy',\n    type: 'limit',\n    quantity: '',\n    price: '',\n    stopPrice: '',\n    timeInForce: 'GTC'\n  });\n  \n  const [isSubmitting, setIsSubmitting] = useState(false);\n  \n  // Update form when selected symbol changes\n  useEffect(() => {\n    if (selectedSymbol) {\n      setFormData(prev => ({\n        ...prev,\n        symbol: selectedSymbol\n      }));\n      \n      // Set market price if available\n      if (marketData?.lastPrice) {\n        setFormData(prev => ({\n          ...prev,\n          price: marketData.lastPrice.toString()\n        }));\n      }\n    }\n  }, [selectedSymbol, marketData]);\n  \n  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {\n    const { name, value } = e.target;\n    setFormData(prev => ({\n      ...prev,\n      [name]: value\n    }));\n    \n    if (name === 'symbol') {\n      onSymbolChange(value);\n    }\n  };\n  \n  const handleSubmit = async (e: React.FormEvent) => {\n    e.preventDefault();\n    \n    if (!isConnected) {\n      alert('Please connect to exchange first');\n      return;\n    }\n    \n    if (!formData.symbol) {\n      alert('Please select a symbol');\n      return;\n    }\n    \n    setIsSubmitting(true);\n    \n    try {\n      const orderData = {\n        symbol: formData.symbol,\n        side: formData.side,\n        type: formData.type,\n        quantity: parseFloat(formData.quantity),\n        price: formData.price ? parseFloat(formData.price) : undefined,\n        stopPrice: formData.stopPrice ? parseFloat(formData.stopPrice) : undefined,\n        timeInForce: formData.timeInForce\n      };\n      \n      // Validate order data\n      if (orderData.quantity <= 0) {\n        throw new Error('Quantity must be greater than 0');\n      }\n      \n      if (orderData.type === 'limit' && !orderData.price) {\n        throw new Error('Price is required for limit orders');\n      }\n      \n      if (orderData.type === 'stop_limit' && (!orderData.price || !orderData.stopPrice)) {\n        throw new Error('Price and stop price are required for stop-limit orders');\n      }\n      \n      onSubmit(orderData);\n      \n      // Reset form\n      setFormData(prev => ({\n        ...prev,\n        quantity: '',\n        price: marketData?.lastPrice ? marketData.lastPrice.toString() : '',\n        stopPrice: ''\n      }));\n      \n    } catch (error: any) {\n      alert(error.message);\n    } finally {\n      setIsSubmitting(false);\n    }\n  };\n  \n  const handleQuickOrder = (percentage: number) => {\n    if (!marketData?.lastPrice) return;\n    \n    const availableBalance = 10000; // Mock balance\n    const price = marketData.lastPrice;\n    const maxQuantity = availableBalance / price;\n    const quantity = maxQuantity * (percentage / 100);\n    \n    setFormData(prev => ({\n      ...prev,\n      quantity: quantity.toFixed(4),\n      price: price.toString()\n    }));\n  };\n  \n  return (\n    <div className=\"p-4 md:p-6\">\n      <h2 className=\"text-xl font-semibold mb-4 text-gray-100\">Order Execution</h2>\n      \n      <form onSubmit={handleSubmit} className=\"space-y-4\">\n        {/* Symbol Selection */}\n        <div>\n          <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n            Symbol\n          </label>\n          <div className=\"flex space-x-2\">\n            <input\n              type=\"text\"\n              name=\"symbol\"\n              value={formData.symbol}\n              onChange={handleInputChange}\n              className=\"flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n              placeholder=\"e.g., BTC/USDT, SBER\"\n              required\n            />\n            <div className=\"flex space-x-2\">\n              {['BTC/USDT', 'ETH/USDT', 'SBER', 'GAZP'].map(symbol => (\n                <button\n                  key={symbol}\n                  type=\"button\"\n                  onClick={() => {\n                    setFormData(prev => ({ ...prev, symbol }));\n                    onSymbolChange(symbol);\n                  }}\n                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${\n                    formData.symbol === symbol\n                      ? 'bg-blue-600 text-white'\n                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n                  }`}\n                >\n                  {symbol}\n                </button>\n              ))}\n            </div>\n          </div>\n        </div>\n        \n        <div className=\"grid grid-cols-1 md:grid-cols-2 gap-4\">\n          {/* Order Side */}\n          <div>\n            <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n              Side\n            </label>\n            <div className=\"flex space-x-2\">\n              <button\n                type=\"button\"\n                onClick={() => setFormData(prev => ({ ...prev, side: 'buy' }))}\n                className={`flex-1 py-3 rounded-lg font-medium transition-colors ${\n                  formData.side === 'buy'\n                    ? 'bg-green-600 text-white'\n                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n                }`}\n              >\n                Buy\n              </button>\n              <button\n                type=\"button\"\n                onClick={() => setFormData(prev => ({ ...prev, side: 'sell' }))}\n                className={`flex-1 py-3 rounded-lg font-medium transition-colors ${\n                  formData.side === 'sell'\n                    ? 'bg-red-600 text-white'\n                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n                }`}\n              >\n                Sell\n              </button>\n            </div>\n          </div>\n          \n          {/* Order Type */}\n          <div>\n            <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n              Order Type\n            </label>\n            <select\n              name=\"type\"\n              value={formData.type}\n              onChange={handleInputChange}\n              className=\"w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n            >\n              <option value=\"market\">Market</option>\n              <option value=\"limit\">Limit</option>\n              <option value=\"stop\">Stop</option>\n              <option value=\"stop_limit\">Stop Limit</option>\n            </select>\n          </div>\n        </div>\n        \n        {/* Quantity */}\n        <div>\n          <div className=\"flex justify-between items-center mb-2\">\n            <label className=\"block text-sm font-medium text-gray-400\">\n              Quantity\n            </label>\n            <div className=\"flex space-x-2\">\n              {[25, 50, 75, 100].map(percent => (\n                <button\n                  key={percent}\n                  type=\"button\"\n                  onClick={() => handleQuickOrder(percent)}\n                  className=\"px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600\"\n                >\n                  {percent}%\n                </button>\n              ))}\n            </div>\n          </div>\n          <input\n            type=\"number\"\n            name=\"quantity\"\n            value={formData.quantity}\n            onChange={handleInputChange}\n            step=\"any\"\n            min=\"0\"\n            className=\"w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n            placeholder=\"0.00\"\n            required\n          />\n        </div>\n        \n        {/* Price Inputs */}\n        <div className=\"grid grid-cols-1 md:grid-cols-2 gap-4\">\n          {formData.type !== 'market' && (\n            <div>\n              <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n                {formData.type === 'stop' ? 'Stop Price' : 'Price'}\n              </label>\n              <input\n                type=\"number\"\n                name=\"price\"\n                value={formData.price}\n                onChange={handleInputChange}\n                step=\"any\"\n                min=\"0\"\n                className=\"w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n                placeholder=\"0.00\"\n                required={formData.type !== 'market'}\n              />\n            </div>\n          )}\n          \n          {(formData.type === 'stop' || formData.type === 'stop_limit') && (\n            <div>\n              <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n                Stop Price\n              </label>\n              <input\n                type=\"number\"\n                name=\"stopPrice\"\n                value={formData.stopPrice}\n                onChange={handleInputChange}\n                step=\"any\"\n                min=\"0\"\n                className=\"w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n                placeholder=\"0.00\"\n                required={formData.type === 'stop_limit'}\n              />\n            </div>\n          )}\n        </div>\n        \n        {/* Time in Force */}\n        <div>\n          <label className=\"block text-sm font-medium text-gray-400 mb-2\">\n            Time in Force\n          </label>\n          <select\n            name=\"timeInForce\"\n            value={formData.timeInForce}\n            onChange={handleInputChange}\n            className=\"w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent\"\n          >\n            <option value=\"GTC\">Good Till Cancel (GTC)</option>\n            <option value=\"IOC\">Immediate or Cancel (IOC)</option>\n            <option value=\"FOK\">Fill or Kill (FOK)</option>\n            <option value=\"DAY\">Day</option>\n          </select>\n        </div>\n        \n        {/* Market Data Summary */}\n        {marketData && (\n          <div className=\"bg-gray-700 rounded-lg p-4\">\n            <div className=\"grid grid-cols-2 gap-4 text-sm\">\n              <div>\n                <span className=\"text-gray-400\">Last Price:</span>\n                <span className={`ml-2 font-medium ${\n                  marketData.change >= 0 ? 'text-green-400' : 'text-red-400'\n                }`}>\n                  {marketData.lastPrice?.toFixed(2) || 'N/A'}\n                </span>\n              </div>\n              <div>\n                <span className=\"text-gray-400\">24h Change:</span>\n                <span className={`ml-2 font-medium ${\n                  marketData.change >= 0 ? 'text-green-400' : 'text-red-400'\n                }`}>\n                  {marketData.change >= 0 ? '+' : ''}{marketData.change?.toFixed(2)}%\n                </span>\n              </div>\n              <div>\n                <span className=\"text-gray-400\">Bid:</span>\n                <span className=\"ml-2 font-medium text-green-400\">\n                  {marketData.bid?.toFixed(2) || 'N/A'}\n                </span>\n              </div>\n              <div>\n                <span className=\"text-gray-400\">Ask:</span>\n                <span className=\"ml-2 font-medium text-red-400\">\n                  {marketData.ask?.toFixed(2) || 'N/A'}\n                </span>\n              </div>\n            </div>\n          </div>\n        )}\n        \n        {/* Submit Button */}\n        <button\n          type=\"submit\"\n          disabled={!isConnected || isSubmitting}\n          className={`w-full py-3 rounded-lg font-medium transition-colors ${\n            isConnected && !isSubmitting\n              ? formData.side === 'buy'\n                ? 'bg-green-600 hover:bg-green-700 text-white'\n                : 'bg-red-600 hover:bg-red-700 text-white'\n              : 'bg-gray-700 text-gray-400 cursor-not-allowed'\n          }`}\n        >\n          {isSubmitting ? 'Submitting...' : `Place ${formData.side.toUpperCase()} Order`}\n        </button>\n      </form>\n    </div>\n  );\n}\n"     },     {       "path": "components/trade/TradeHistoryTable.tsx",       "content": "'use client';\n\nimport React, { useState, useMemo } from 'react';\nimport { Trade } from '@/types/trade';\n\ntype TradeHistoryTableProps = {\n  trades: Trade[];\n  selectedSymbol: string | null;\n};\n\nexport default function TradeHistoryTable({ trades, selectedSymbol }: TradeHistoryTableProps) {\n  const [filter, setFilter] = useState<'all' | 'buy' | 'sell'>('all');\n  \n  const filteredTrades = useMemo(() => {\n    let filtered = trades;\n    \n    if (selectedSymbol) {\n      filtered = filtered.filter(trade => trade.symbol === selectedSymbol);\n    }\n    \n    if (filter !== 'all') {\n      filtered = filtered.filter(trade => trade.side === filter);\n    }\n    \n    return filtered.sort((a, b) => \n      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()\n    );\n  }, [trades, selectedSymbol, filter]);\n  \n  const formatDate = (dateString: string) => {\n    const date = new Date(dateString);\n    return date.toLocaleTimeString('en-US', {\n      hour: '2-digit',\n      minute: '2-digit',\n      second: '2-digit'\n    });\n  };\n  \n  const calculateTotal = () => {\n    const totals = filteredTrades.reduce(\n      (acc, trade) => {\n        const value = trade.quantity * trade.price;\n        if (trade.side === 'buy') {\n          acc.buyVolume += trade.quantity;\n          acc.buyValue += value;\n        } else {\n          acc.sellVolume += trade.quantity;\n          acc.sellValue += value;\n        }\n        acc.totalFees += trade.fees;\n        return acc;\n      },\n      { buyVolume: 0, sellVolume: 0, buyValue: 0, sellValue: 0, totalFees: 0 }\n    );\n    \n    return {\n      ...totals,\n      netVolume: totals.buyVolume - totals.sellVolume,\n      netValue: totals.buyValue - totals.sellValue\n    };\n  };\n  \n  const totals = calculateTotal();\n  \n  return (\n    <div className=\"p-4 md:p-6\">\n      <div className=\"flex justify-between items-center mb-4\">\n        <h3 className=\"text-lg font-semibold text-gray-100\">Trade History</h3>\n        <div className=\"flex space-x-2\">\n          <button\n            onClick={() => setFilter('all')}\n            className={`px-3 py-1 text-sm rounded-lg transition-colors ${\n              filter === 'all'\n                ? 'bg-blue-600 text-white'\n                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n            }`}\n          >\n            All\n          </button>\n          <button\n            onClick={() => setFilter('buy')}\n            className={`px-3 py-1 text-sm rounded-lg transition-colors ${\n              filter === 'buy'\n                ? 'bg-green-600 text-white'\n                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n            }`}\n          >\n            Buy\n          </button>\n          <button\n            onClick={() => setFilter('sell')}\n            className={`px-3 py-1 text-sm rounded-lg transition-colors ${\n              filter === 'sell'\n                ? 'bg-red-600 text-white'\n                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'\n            }`}\n          >\n            Sell\n          </button>\n        </div>\n      </div>\n      \n      {/* Summary Stats */}\n      <div className=\"grid grid-cols-2 md:grid-cols-4 gap-3 mb-4\">\n        <div className=\"bg-gray-700 rounded-lg p-3\">\n          <div className=\"text-xs text-gray-400\">Total Trades</div>\n          <div className=\"text-lg font-semibold text-white\">{filteredTrades.length}</div>\n        </div>\n        <div className=\"bg-gray-700 rounded-lg p-3\">\n          <div className=\"text-xs text-gray-400\">Net Volume</div>\n          <div className={`text-lg font-semibold ${\n            totals.netVolume >= 0 ? 'text-green-400' : 'text-red-400'\n          }`}>\n            {totals.netVolume.toFixed(4)}\n          </div>\n        </div>\n        <div className=\"bg-gray-700 rounded-lg p-3\">\n          <div className=\"text-xs text-gray-400\">Total Fees</div>\n          <div className=\"text-lg font-semibold text-yellow-400\">\n            ${totals.totalFees.toFixed(2)}\n          </div>\n        </div>\n        <div className=\"bg-gray-700 rounded-lg p-3\">\n          <div className=\"text-xs text-gray-400\">Net Value</div>\n          <div className={`text-lg font-semibold ${\n            totals.netValue >= 0 ? 'text-green-400' : 'text-red-400'\n          }`}>\n            ${Math.abs(totals.netValue).toFixed(2)}\n          </div>\n        </div>\n      </div>\n      \n      {/* Trades Table */}\n      <div className=\"overflow-x-auto\">\n        <table className=\"w-full\">\n          <thead>\n            <tr className=\"border-b border-gray-700\">\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking-wider\">Time</th>\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking-wider\">Symbol</th>\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking-wider\">Side</th>\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking-wider\">Quantity</th>\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking-wider\">Price</th>\n              <th className=\"text-left py-3 px-2 text-xs font-medium text-gray-400 uppercase tracking
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  LineChart, Line, BarChart, Bar, ScatterChart, Scatter, 
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  Heatmap, HeatmapCell, PieChart, Pie, Cell, AreaChart, Area,
+  ComposedChart
+} from 'recharts';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { 
+  Search, 
+  Filter, 
+  Download, 
+  Play, 
+  Pause, 
+  RefreshCw, 
+  BarChart3, 
+  TrendingUp, 
+  Cpu, 
+  Zap, 
+  Shield, 
+  AlertTriangle,
+  ChevronRight,
+  ChevronLeft,
+  Activity,
+  Globe,
+  Layers,
+  AlertCircle,
+  Target,
+  PieChart as PieChartIcon,
+  Network,
+  TrendingDown,
+  MessageSquare,
+  Twitter,
+  Reddit,
+  Hash,
+  TrendingUp as TrendingUpIcon,
+  TrendingDown as TrendingDownIcon,
+  Bell,
+  Users,
+  Hash as HashIcon,
+  BarChart2,
+  Link as LinkIcon,
+  FileText,
+  FileSpreadsheet,
+  Calculator,
+  Cpu as CpuIcon,
+  Wind,
+  Target as TargetIcon,
+  AlertOctagon,
+  TrendingUp as TrendingUpIcon2,
+  TrendingDown as TrendingDownIcon2,
+  BarChart as BarChartIcon,
+  LineChart as LineChartIcon,
+  Newspaper,
+  TrendingUp as TrendingUpIcon3,
+  TrendingDown as TrendingDownIcon3,
+  AlertCircle as AlertCircleIcon,
+  Activity as ActivityIcon,
+  Hash as HashIcon2,
+  MessageSquare as MessageSquareIcon,
+  Globe as GlobeIcon,
+  Users as UsersIcon,
+  Bell as BellIcon,
+  Filter as FilterIcon,
+  Download as DownloadIcon,
+  Brain,
+  Sparkles,
+  Code,
+  FileJson,
+  BarChart4,
+  Target as TargetIcon2,
+  AlertOctagon as AlertOctagonIcon,
+  Zap as ZapIcon,
+  Shield as ShieldIcon,
+  Cpu as CpuIcon2,
+  CheckCircle,
+  XCircle,
+  Clock,
+  DollarSign,
+  Percent,
+  Wallet,
+  ArrowUpRight,
+  ArrowDownRight,
+  ExternalLink
+} from 'lucide-react';
+
+// Types
+interface StatisticalArbitragePair {
+  id: string;
+  asset1: string;
+  asset2: string;
+  correlation: number;
+  spread: number;
+  zScore: number;
+  halfLife: number;
+  entryThreshold: number;
+  exitThreshold: number;
+  sharpeRatio: number;
+  status: 'active' | 'inactive' | 'alert';
+}
+
+interface MLFeature {
+  name: string;
+  type: 'technical' | 'fundamental' | 'market' | 'sentiment';
+  importance: number;
+  correlation: number;
+  stability: number;
+}
+
+interface FactorModel {
+  factor: string;
+  exposure: number;
+  riskPremium: number;
+  tStat: number;
+  pValue: number;
+  rSquared: number;
+}
+
+interface PortfolioWeight {
+  symbol: string;
+  name: string;
+  mvoWeight: number;
+  riskParityWeight: number;
+  blackLittermanWeight: number;
+  currentWeight: number;
+}
+
+interface MonteCarloResult {
+  iteration: number;
+  portfolioReturn: number;
+  portfolioVolatility: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+}
+
+interface PerformanceMetric {
+  metric: string;
+  value: number;
+  benchmark: number;
+  explanation: string;
+}
+
+interface RiskFactor {
+  factor: string;
+  exposure: number;
+  contribution: number;
+  risk: number;
+  color: string;
+}
+
+interface CrossAssetCorrelation {
+  asset1: string;
+  asset2: string;
+  correlation: number;
+  rollingCorrelation: number[];
+  regime: 'high' | 'medium' | 'low';
+}
+
+// New Types for AI Trade Strategy Generator
+interface AIStrategy {
+  id: string;
+  name: string;
+  description: string;
+  type: 'mean_reversion' | 'momentum' | 'breakout' | 'arbitrage' | 'ml_based' | 'hybrid';
+  complexity: number; // 1-10
+  winRate: number; // 0-100%
+}
+
+// New Types for Trade Execution Module
+interface ExchangeConfig {
+  id: string;
+  name: string;
+  apiKey: string;
+  apiSecret: string;
+  testnet: boolean;
+  status: 'connected' | 'disconnected' | 'error';
+}
+
+interface TradeOrder {
+  id: string;
+  exchange: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  type: 'market' | 'limit';
+  quantity: number;
+  price?: number;
+  status: 'pending' | 'filled' | 'partial' | 'cancelled' | 'rejected';
+  filledQuantity: number;
+  averagePrice: number;
+  fee: number;
+  feeCurrency: string;
+  timestamp: string;
+  updatedAt: string;
+}
+
+interface TradeFee {
+  maker: number;
+  taker: number;
+  currency: string;
+}
+
+interface OrderValidation {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+const TradeExecutionModule = () => {
+  // Exchange connections
+  const [exchanges, setExchanges] = useState<ExchangeConfig[]>([
+    {
+      id: 'binance',
+      name: 'Binance',
+      apiKey: '',
+      apiSecret: '',
+      testnet: true,
+      status: 'disconnected'
+    },
+    {
+      id: 'kraken',
+      name: 'Kraken',
+      apiKey: '',
+      apiSecret: '',
+      testnet: true,
+      status: 'disconnected'
+    }
+  ]);
+
+  // Trade order state
+  const [order, setOrder] = useState({
+    exchange: 'binance',
+    symbol: 'BTCUSDT',
+    side: 'buy' as 'buy' | 'sell',
+    type: 'limit' as 'market' | 'limit',
+    quantity: 0.01,
+    price: 50000,
+    total: 0
+  });
+
+  const [orders, setOrders] = useState<TradeOrder[]>([
+    {
+      id: '1',
+      exchange: 'binance',
+      symbol: 'BTCUSDT',
+      side: 'buy',
+      type: 'limit',
+      quantity: 0.02,
+      price: 49500,
+      status: 'filled',
+      filledQuantity: 0.02,
+      averagePrice: 49498.50,
+      fee: 0.001,
+      feeCurrency: 'BTC',
+      timestamp: '2024-01-15T10:30:00Z',
+      updatedAt: '2024-01-15T10:30:05Z'
+    },
+    {
+      id: '2',
+      exchange: 'kraken',
+      symbol: 'ETHUSD',
+      side: 'sell',
+      type: 'market',
+      quantity: 0.5,
+      status: 'filled',
+      filledQuantity: 0.5,
+      averagePrice: 2650.75,
+      fee: 1.32,
+      feeCurrency: 'USD',
+      timestamp: '2024-01-15T11:15:00Z',
+      updatedAt: '2024-01-15T11:15:01Z'
+    }
+  ]);
+
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [validation, setValidation] = useState<OrderValidation>({ isValid: true, errors: [], warnings: [] });
+  const [fees, setFees] = useState<TradeFee[]>([
+    { maker: 0.001, taker: 0.001, currency: 'BTC' },
+    { maker: 0.0016, taker: 0.0026, currency: 'USD' }
+  ]);
+
+  // Calculate total
+  useEffect(() => {
+    const total = order.quantity * (order.price || 0);
+    setOrder(prev => ({ ...prev, total }));
+    validateOrder();
+  }, [order.quantity, order.price, order.type]);
+
+  // Validate order
+  const validateOrder = () => {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (order.quantity <= 0) {
+      errors.push('Quantity must be greater than 0');
+    }
+
+    if (order.type === 'limit' && (!order.price || order.price <= 0)) {
+      errors.push('Limit price must be specified');
+    }
+
+    if (order.quantity > 100) {
+      warnings.push('Large order size may impact market price');
+    }
+
+    setValidation({
+      isValid: errors.length === 0,
+      errors,
+      warnings
+    });
+  };
+
+  // Calculate fee
+  const calculateFee = () => {
+    const exchangeFee = fees.find(f => f.currency === (order.symbol.includes('USDT') ? 'BTC' : 'USD'));
+    if (!exchangeFee) return 0;
+
+    const feeRate = order.type === 'market' ? exchangeFee.taker : exchangeFee.maker;
+    return order.total * feeRate;
+  };
+
+  // Connect to exchange
+  const connectExchange = async (exchangeId: string) => {
+    const exchange = exchanges.find(e => e.id === exchangeId);
+    if (!exchange) return;
+
+    try {
+      // Simulate API connection
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setExchanges(prev => prev.map(e => 
+        e.id === exchangeId ? { ...e, status: 'connected' } : e
+      ));
+    } catch (error) {
+      setExchanges(prev => prev.map(e => 
+        e.id === exchangeId ? { ...e, status: 'error' } : e
+      ));
+    }
+  };
+
+  // Execute trade
+  const executeTrade = async () => {
+    if (!validation.isValid) return;
+
+    setIsExecuting(true);
+    
+    try {
+      // Simulate API call to exchange
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const fee = calculateFee();
+      const newOrder: TradeOrder = {
+        id: `order_${Date.now()}`,
+        exchange: order.exchange,
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.quantity,
+        price: order.price,
+        status: 'filled',
+        filledQuantity: order.quantity,
+        averagePrice: order.price || order.total / order.quantity,
+        fee,
+        feeCurrency: order.symbol.includes('USDT') ? 'BTC' : 'USD',
+        timestamp: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      setOrders(prev => [newOrder, ...prev]);
+      
+      // Reset form
+      setOrder({
+        exchange: 'binance',
+        symbol: 'BTCUSDT',
+        side: 'buy',
+        type: 'limit',
+        quantity: 0.01,
+        price: 50000,
+        total: 0
+      });
+      
+    } catch (error) {
+      console.error('Trade execution failed:', error);
+      // Add failed order
+      const failedOrder: TradeOrder = {
+        id: `order_${Date.now()}`,
+        exchange: order.exchange,
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: order.quantity,
+        price: order.price,
+        status: 'rejected',
+        filledQuantity: 0,
+        averagePrice: 0,
+        fee: 0,
+        feeCurrency: order.symbol.includes('USDT') ? 'BTC' : 'USD',
+        timestamp: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      setOrders(prev => [failedOrder, ...prev]);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  // Cancel order
+  const cancelOrder = async (orderId: string) => {
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setOrders(prev => prev.map(o => 
+        o.id === orderId ? { ...o, status: 'cancelled', updatedAt: new Date().toISOString() } : o
+      ));
+    } catch (error) {
+      console.error('Failed to cancel order:', error);
+    }
+  };
+
+  // Get status badge color
+  const getStatusColor = (status: TradeOrder['status']) => {
+    switch (status) {
+      case 'filled': return 'bg-green-500/20 text-green-400';
+      case 'partial': return 'bg-yellow-500/20 text-yellow-400';
+      case 'pending': return 'bg-blue-500/20 text-blue-400';
+      case 'cancelled': return 'bg-gray-500/20 text-gray-400';
+      case 'rejected': return 'bg-red-500/20 text-red-400';
+      default: return 'bg-gray-500/20 text-gray-400';
+    }
+  };
+
+  // Get status icon
+  const getStatusIcon = (status: TradeOrder['status']) => {
+    switch (status) {
+      case 'filled': return <CheckCircle className="w-4 h-4" />;
+      case 'partial': return <Clock className="w-4 h-4" />;
+      case 'pending': return <Clock className="w-4 h-4" />;
+      case 'cancelled': return <XCircle className="w-4 h-4" />;
+      case 'rejected': return <XCircle className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">Trade Execution Module</h1>
+          <p className="text-gray-400">Secure trade execution with real-time order tracking</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Exchange Connections & Order Form */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Exchange Connections */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="w-5 h-5" />
+                  Exchange Connections
+                </CardTitle>
+                <CardDescription>Connect to supported exchanges</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {exchanges.map((exchange) => (
+                    <div key={exchange.id} className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${
+                          exchange.status === 'connected' ? 'bg-green-500' :
+                          exchange.status === 'error' ? 'bg-red-500' :
+                          'bg-gray-500'
+                        }`} />
+                        <div>
+                          <div className="font-medium">{exchange.name}</div>
+                          <div className="text-sm text-gray-400">
+                            {exchange.testnet ? 'Testnet Mode' : 'Live Trading'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge className={getStatusColor(exchange.status as any)}>
+                          {exchange.status}
+                        </Badge>
+                        <Button 
+                          size="sm" 
+                          onClick={() => connectExchange(exchange.id)}
+                          disabled={exchange.status === 'connected'}
+                        >
+                          {exchange.status === 'connected' ? 'Connected' : 'Connect'}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Order Form */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-5 h-5" />
+                  New Order
+                </CardTitle>
+                <CardDescription>Execute trades on connected exchanges</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Validation Errors & Warnings */}
+                  {validation.errors.length > 0 && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <div className="flex items-center gap-2 text-red-400 mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="font-medium">Validation Errors</span>
+                      </div>
+                      <ul className="text-sm text-red-300 space-y-1">
+                        {validation.errors.map((error, index) => (
+                          <li key={index}>• {error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {validation.warnings.length > 0 && (
+                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                      <div className="flex items-center gap-2 text-yellow-400 mb-2">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span className="font-medium">Warnings</span>
+                      </div>
+                      <ul className="text-sm text-yellow-300 space-y-1">
+                        {validation.warnings.map((warning, index) => (
+                          <li key={index}>• {warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Order Form Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="exchange">Exchange</Label>
+                      <Select 
+                        value={order.exchange} 
+                        onValueChange={(value) => setOrder({...order, exchange: value})}
+                      >
+                        <SelectTrigger className="bg-gray-900 border-gray-700">
+                          <SelectValue placeholder="Select exchange" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-800 border-gray-700">
+                          {exchanges.map((ex) => (
+                            <SelectItem key={ex.id} value={ex.id}>
+                              {ex.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="symbol">Symbol</Label>
+                      <Select 
+                        value={order.symbol} 
+                        onValueChange={(value) => setOrder({...order, symbol: value})}
+                      >
+                        <SelectTrigger className="bg-gray-900 border-gray-700">
+                          <SelectValue placeholder="Select symbol" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-800 border-gray-700">
+                          <SelectItem value="BTCUSDT">BTC/USDT</SelectItem>
+                          <SelectItem value="ETHUSDT">ETH/USDT</SelectItem>
+                          <SelectItem value="SOLUSDT">SOL/USDT</SelectItem>
+                          <SelectItem value="XRPUSDT">XRP/USDT</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="side">Side</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={order.side === 'buy' ? 'default' : 'outline'}
+                          className={`flex-1 ${order.side === 'buy' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                          onClick={() => setOrder({...order, side: 'buy'})}
+                        >
+                          <ArrowUpRight className="w-4 h-4 mr-2" />
+                          Buy
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={order.side === 'sell' ? 'default' : 'outline'}
+                          className={`flex-1 ${order.side === 'sell' ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                          onClick={() => setOrder({...order, side: 'sell'})}
+                        >
+                          <ArrowDownRight className="w-4 h-4 mr-2" />
+                          Sell
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="type">Order Type</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={order.type === 'limit' ? 'default' : 'outline'}
+                          className="flex-1"
+                          onClick={() => setOrder({...order, type: 'limit'})}
+                        >
+                          Limit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={order.type === 'market' ? 'default' : 'outline'}
+                          className="flex-1"
+                          onClick={() => setOrder({...order, type: 'market', price: undefined})}
+                        >
+                          Market
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="quantity">Quantity</Label>
+                      <div className="relative">
+                        <Input
+                          id="quantity"
+                          type="number"
+                          value={order.quantity}
+                          onChange={(e) => setOrder({...order, quantity: parseFloat(e.target.value) || 0})}
+                          className="bg-gray-900 border-gray-700 pl-10"
+                          step="0.001"
+                          min="0"
+                        />
+                        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                          <Calculator className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {order.type === 'limit' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="price">Price (USD)</Label>
+                        <div className="relative">
+                          <Input
+                            id="price"
+                            type="number"
+                            value={order.price}
+                            onChange={(e) => setOrder({...order, price: parseFloat(e.target.value) || 0})}
+                            className="bg-gray-900 border-gray-700 pl-10"
+                            step="0.01"
+                            min="0"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <DollarSign className="w-4 h-4" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Order Summary */}
+                  <div className="p-4 bg-gray-900/50 rounded-lg space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Cost</span>
+                      <span className="font-medium">${order.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Estimated Fee</span>
+                      <span className="font-medium">${calculateFee().toFixed(4)}</span>
+                    </div>
+                    <div className="flex justify-between pt-3 border-t border-gray-700">
+                      <span className="text-gray-400">Net Cost</span>
+                      <span className="font-bold text-lg">
+                        ${(order.total + calculateFee()).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Execute Button */}
+                  <Button 
+                    className="w-full py-6 text-lg font-medium"
+                    onClick={executeTrade}
+                    disabled={!validation.isValid || isExecuting}
+                  >
+                    {isExecuting ? (
+                      <>
+                        <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                        Executing Trade...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-5 h-5 mr-2" />
+                        Execute {order.side.toUpperCase()} Order
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column: Order History & Fees */}
+          <div className="space-y-6">
+            {/* Order History */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="w-5 h-5" />
+                  Order History
+                </CardTitle>
+                <CardDescription>Recent trade executions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                  {orders.map((order) => (
+                    <div key={order.id} className="p-3 bg-gray-900/50 rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="font-medium">{order.symbol}</div>
+                          <div className="text-sm text-gray-400">
+                            {order.exchange.toUpperCase()} • {order.type.toUpperCase()}
+                          </div>
+                        </div>
+                        <Badge className={`${getStatusColor(order.status)} flex items-center gap-1`}>
+                          {getStatusIcon(order.status)}
+                          {order.status.toUpperCase()}
+                        </Badge>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <div className="text-gray-400">Side</div>
+                          <div className={`font-medium ${order.side === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                            {order.side.toUpperCase()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Quantity</div>
+                          <div className="font-medium">{order.quantity}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Avg Price</div>
+                          <div className="font-medium">${order.averagePrice.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Fee</div>
+                          <div className="font-medium">{order.fee} {order.feeCurrency}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400 flex justify-between">
+                        <span>{new Date(order.timestamp).toLocaleTimeString()}</span>
+                        {order.status === 'pending' && (
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="h-6 text-xs"
+                            onClick={() => cancelOrder(order.id)}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Fee Calculator */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5" />
+                  Fee Calculator
+                </CardTitle>
+                <CardDescription>Exchange trading fees</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {fees.map((fee, index) => (
+                    <div key={index} className="p-3 bg-gray-900/50 rounded-lg">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="font-medium">Fee Structure</div>
+                        <Badge className="bg-blue-500/20 text-blue-400">
+                          {fee.currency}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <div className="text-gray-400">Maker Fee</div>
+                          <div className="font-medium">{(fee.maker * 100).toFixed(3)}%</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Taker Fee</div>
+                          <div className="font-medium">{(fee.taker * 100).toFixed(3)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="p-3 bg-gray-900/50 rounded-lg">
+                    <div className="text-sm text-gray-400 mb-2">Example Calculation</div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Trade Amount:</span>
+                        <span>$10,000</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Maker Fee (0.10%):</span>
+                        <span>$10.00</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Taker Fee (0.20%):</span>
+                        <span>$20.00</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TradeExecutionModule;
