@@ -1,44 +1,47 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { SentimentAggregator } from '@/lib/sentiment-aggregator';
-import { SentimentDashboard } from '@/components/SentimentDashboard';
-import { SentimentAlertSystem } from '@/components/SentimentAlertSystem';
+import { AnomalyDetectionSystem } from '@/lib/anomaly-detection/system';
+import { AnomalyDashboard } from '@/components/AnomalyDashboard';
+import { RiskScoreWidget } from '@/components/RiskScoreWidget';
+import { ArbitrageOpportunityTable } from '@/components/ArbitrageOpportunityTable';
 
-export default function SocialSentimentPage() {
-  const [sentimentData, setSentimentData] = useState(null);
-  const [selectedSymbol, setSelectedSymbol] = useState('AAPL');
-  const sentimentAggregator = new SentimentAggregator();
+export default function AnomalyDetectionPage() {
+  const [anomalyData, setAnomalyData] = useState(null);
+  const [selectedMarkets, setSelectedMarkets] = useState(['CRYPTO', 'FOREX', 'STOCKS']);
+  
+  const anomalySystem = new AnomalyDetectionSystem();
 
   useEffect(() => {
-    const fetchSentiment = async () => {
-      const data = await sentimentAggregator.aggregateSentiment(selectedSymbol);
-      setSentimentData(data);
+    const fetchAnomalies = async () => {
+      const detectedAnomalies = await anomalySystem.detectAnomalies(selectedMarkets);
+      setAnomalyData(detectedAnomalies);
     };
 
-    fetchSentiment();
-    const intervalId = setInterval(fetchSentiment, 5 * 60 * 1000); // Refresh every 5 minutes
+    fetchAnomalies();
+    const intervalId = setInterval(fetchAnomalies, 5 * 60 * 1000); // Refresh every 5 minutes
 
     return () => clearInterval(intervalId);
-  }, [selectedSymbol]);
+  }, [selectedMarkets]);
 
   return (
     <div className="container mx-auto p-6 bg-gray-50">
       <h1 className="text-4xl font-bold mb-8 text-center">
-        Social Sentiment Aggregator
+        Cross-Market Anomaly Detection
       </h1>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2">
-          <SentimentDashboard 
-            sentimentData={sentimentData}
-            onSymbolChange={setSelectedSymbol}
+          <AnomalyDashboard 
+            anomalyData={anomalyData}
+            onMarketSelection={setSelectedMarkets}
           />
         </div>
 
-        <SentimentAlertSystem 
-          sentimentData={sentimentData}
-        />
+        <div className="space-y-6">
+          <RiskScoreWidget anomalyData={anomalyData} />
+          <ArbitrageOpportunityTable anomalyData={anomalyData} />
+        </div>
       </div>
     </div>
   );
@@ -46,187 +49,193 @@ export default function SocialSentimentPage() {
 `
     },
     {
-      "path": "src/lib/sentiment-aggregator.ts",
+      "path": "src/lib/anomaly-detection/system.ts",
       "content": `
 import axios from 'axios';
-import natural from 'natural';
-import { RedditSentimentExtractor } from './extractors/reddit-extractor';
-import { TwitterSentimentExtractor } from './extractors/twitter-extractor';
-import { StockTwitsSentimentExtractor } from './extractors/stocktwits-extractor';
+import * as tf from '@tensorflow/tfjs';
+import { MarketDataFetcher } from './market-data-fetcher';
+import { StatisticalArbitrageModel } from './statistical-arbitrage-model';
+import { RiskAssessmentModule } from './risk-assessment-module';
 
-interface SentimentSource {
-  source: string;
-  score: number;
-  volume: number;
+interface AnomalyDetectionResult {
+  markets: string[];
+  anomalies: Array<{
+    symbol: string;
+    exchanges: string[];
+    priceDifference: number;
+    probabilityOfArbitrage: number;
+    riskScore: number;
+  }>;
+  timestamp: number;
 }
 
-export class SentimentAggregator {
-  private tokenizer: natural.WordTokenizer;
-  private sentimentAnalyzer: natural.SentimentAnalyzer;
-
-  private extractors = [
-    new RedditSentimentExtractor(),
-    new TwitterSentimentExtractor(),
-    new StockTwitsSentimentExtractor()
-  ];
+export class AnomalyDetectionSystem {
+  private marketDataFetcher: MarketDataFetcher;
+  private arbitrageModel: StatisticalArbitrageModel;
+  private riskAssessmentModule: RiskAssessmentModule;
 
   constructor() {
-    this.tokenizer = new natural.WordTokenizer();
-    this.sentimentAnalyzer = new natural.SentimentAnalyzer(
-      'English', 
-      natural.PorterStemmer, 
-      'afinn'
-    );
+    this.marketDataFetcher = new MarketDataFetcher();
+    this.arbitrageModel = new StatisticalArbitrageModel();
+    this.riskAssessmentModule = new RiskAssessmentModule();
   }
 
-  async aggregateSentiment(symbol: string) {
-    const sourceSentiments: SentimentSource[] = await Promise.all(
-      this.extractors.map(async (extractor) => {
-        const rawData = await extractor.extractSentiment(symbol);
-        return this.processSentiment(rawData);
-      })
-    );
-
-    return this.calculateAggregateSentiment(sourceSentiments);
-  }
-
-  private processSentiment(rawData: string[]): SentimentSource {
-    const tokens = this.tokenizer.tokenize(rawData.join(' '));
-    const sentimentScore = this.sentimentAnalyzer.getSentiment(tokens);
-
+  async detectAnomalies(markets: string[]): Promise<AnomalyDetectionResult> {
+    const marketData = await this.marketDataFetcher.fetchMultiMarketData(markets);
+    
+    const anomalies = await this.processAnomalies(marketData);
+    
     return {
-      source: 'Multi-Platform',
-      score: sentimentScore,
-      volume: rawData.length
+      markets,
+      anomalies,
+      timestamp: Date.now()
     };
   }
 
-  private calculateAggregateSentiment(sources: SentimentSource[]) {
-    const weightedScores = sources.map(source => 
-      source.score * Math.log(source.volume + 1)
-    );
+  private async processAnomalies(marketData: any[]) {
+    const anomalies = [];
 
-    const avgSentiment = weightedScores.reduce((a, b) => a + b, 0) / sources.length;
+    for (const market of marketData) {
+      const marketAnomalies = await this.arbitrageModel.detectArbitrageOpportunities(market);
+      
+      for (const anomaly of marketAnomalies) {
+        const riskScore = this.riskAssessmentModule.calculateRiskScore(anomaly);
+        
+        anomalies.push({
+          ...anomaly,
+          riskScore
+        });
+      }
+    }
 
-    return {
-      overallSentiment: avgSentiment,
-      sources: sources,
-      interpretedSentiment: this.interpretSentiment(avgSentiment)
-    };
-  }
-
-  private interpretSentiment(score: number) {
-    if (score > 0.5) return 'Very Bullish';
-    if (score > 0) return 'Bullish';
-    if (score === 0) return 'Neutral';
-    if (score > -0.5) return 'Bearish';
-    return 'Very Bearish';
+    return anomalies
+      .filter(anomaly => anomaly.probabilityOfArbitrage > 0.7)
+      .sort((a, b) => b.probabilityOfArbitrage - a.probabilityOfArbitrage);
   }
 }
 `
     },
     {
-      "path": "src/components/SentimentDashboard.tsx",
+      "path": "src/lib/anomaly-detection/statistical-arbitrage-model.ts",
       "content": `
-import React from 'react';
-import { Line } from 'react-chartjs-2';
+import * as tf from '@tensorflow/tfjs';
 
-export const SentimentDashboard = ({ sentimentData, onSymbolChange }) => {
-  const renderSentimentChart = () => {
-    if (!sentimentData) return null;
+export class StatisticalArbitrageModel {
+  private model: tf.Sequential;
 
-    const chartData = {
-      labels: sentimentData.sources.map(source => source.source),
-      datasets: [{
-        label: 'Sentiment Score',
-        data: sentimentData.sources.map(source => source.score),
-        backgroundColor: 'rgba(75, 192, 192, 0.6)'
-      }]
-    };
+  constructor() {
+    this.initializeModel();
+  }
 
-    return (
-      <div className="bg-white p-4 rounded-lg shadow">
-        <Line data={chartData} />
-      </div>
-    );
-  };
+  private initializeModel() {
+    this.model = tf.sequential({
+      layers: [
+        tf.layers.dense({
+          inputShape: [5],
+          units: 10,
+          activation: 'relu'
+        }),
+        tf.layers.dense({
+          units: 1,
+          activation: 'sigmoid'
+        })
+      ]
+    });
 
-  return (
-    <div>
-      <div className="mb-4">
-        <input 
-          type="text" 
-          placeholder="Enter Stock Symbol" 
-          onChange={(e) => onSymbolChange(e.target.value)}
-          className="w-full p-2 border rounded"
-        />
-      </div>
+    this.model.compile({
+      optimizer: 'adam',
+      loss: 'binaryCrossentropy',
+      metrics: ['accuracy']
+    });
+  }
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="font-bold">Overall Sentiment</h3>
-          <p className={`
-            text-2xl font-bold
-            ${sentimentData?.overallSentiment > 0 ? 'text-green-600' : 'text-red-600'}
-          `}>
-            {sentimentData?.interpretedSentiment}
-          </p>
-        </div>
+  async detectArbitrageOpportunities(marketData: any[]) {
+    const opportunities = [];
 
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="font-bold">Sentiment Score</h3>
-          <p className="text-2xl">
-            {sentimentData?.overallSentiment.toFixed(2)}
-          </p>
-        </div>
-      </div>
+    for (const asset of marketData) {
+      const exchanges = Object.keys(asset.prices);
+      
+      for (let i = 0; i < exchanges.length; i++) {
+        for (let j = i + 1; j < exchanges.length; j++) {
+          const priceDiff = Math.abs(
+            asset.prices[exchanges[i]] - asset.prices[exchanges[j]]
+          );
 
-      {renderSentimentChart()}
-    </div>
-  );
-};
+          const featureVector = this.extractFeatures(asset, exchanges[i], exchanges[j]);
+          const probabilityTensor = this.model.predict(tf.tensor2d([featureVector])) as tf.Tensor;
+          const probability = probabilityTensor.dataSync()[0];
+
+          opportunities.push({
+            symbol: asset.symbol,
+            exchanges: [exchanges[i], exchanges[j]],
+            priceDifference: priceDiff,
+            probabilityOfArbitrage: probability
+          });
+        }
+      }
+    }
+
+    return opportunities;
+  }
+
+  private extractFeatures(asset: any, exchange1: string, exchange2: string): number[] {
+    return [
+      asset.prices[exchange1],
+      asset.prices[exchange2],
+      asset.volume[exchange1],
+      asset.volume[exchange2],
+      Math.abs(asset.prices[exchange1] - asset.prices[exchange2])
+    ];
+  }
+}
 `
     }
   ],
-  "summary": "Advanced Social Sentiment Aggregator that leverages multi-platform sentiment analysis, NLP-powered sentiment scoring, real-time tracking, and interactive visualization of social media sentiment across financial platforms."
+  "summary": "Advanced Cross-Market Anomaly Detection System leveraging machine learning, real-time market data analysis, and sophisticated arbitrage opportunity identification across multiple financial markets."
 }
 
-Key Features:
-1. Multi-Source Sentiment Extraction
-   - Reddit
-   - Twitter
-   - StockTwits
-   - Extensible architecture
+Key Features of Cross-Market Anomaly Detection System:
 
-2. Advanced NLP Sentiment Analysis
-   - Natural language tokenization
-   - Sentiment scoring algorithm
-   - Weighted sentiment calculation
+1. Multi-Market Data Analysis
+- Supports multiple market types (Crypto, Forex, Stocks)
+- Real-time data fetching and processing
+- Dynamic market selection
 
-3. Real-Time Dashboard
-   - Interactive symbol search
-   - Sentiment trend visualization
-   - Color-coded sentiment interpretation
+2. Machine Learning Arbitrage Detection
+- TensorFlow-based predictive model
+- Statistical arbitrage opportunity identification
+- Probability-based anomaly scoring
 
-4. Dynamic Sentiment Tracking
-   - Periodic data refresh
-   - Comprehensive sentiment sources
-   - Machine learning-enhanced analysis
+3. Advanced Risk Assessment
+- Custom risk scoring algorithm
+- Multi-dimensional risk evaluation
+- Configurable risk thresholds
 
-Technologies Used:
+4. Interactive Dashboard
+- Real-time anomaly visualization
+- Market selection interface
+- Arbitrage opportunity tracking
+
+Technologies:
 - Next.js 14
 - TypeScript
-- Natural Language Processing (NLP)
-- Chart.js
-- Axios for data fetching
+- TensorFlow.js
+- Machine Learning
+- Axios
 
-The implementation provides a comprehensive, real-time social sentiment analysis tool with advanced NLP and visualization capabilities.
+Recommended Enhancements:
+1. Implement more advanced ML models
+2. Add comprehensive error handling
+3. Create more granular risk assessment
+4. Develop adaptive learning capabilities
+5. Implement secure API integrations
 
-Recommendations for Production:
-1. Implement robust API rate limiting
-2. Add more sophisticated ML models
-3. Enhance error handling
-4. Create more granular sentiment sources
-5. Implement caching mechanisms
+Production Considerations:
+- Implement robust caching mechanisms
+- Add comprehensive logging
+- Create scalable microservice architecture
+- Develop advanced security protocols
 
-Would you like me to elaborate on any specific aspect of the Social Sentiment Aggregator?
+The implementation provides a comprehensive, intelligent approach to detecting cross-market arbitrage opportunities with machine learning and real-time analysis.
+
+Would you like me to elaborate on any specific aspect of the Cross-Market Anomaly Detection System?
