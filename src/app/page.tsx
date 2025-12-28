@@ -1,234 +1,222 @@
+import axios from 'axios';
+import natural from 'natural';
+import * as tf from '@tensorflow/tfjs';
+
+interface SentimentSignal {
+  asset: string;
+  sentimentScore: number;
+  confidence: number;
+  timestamp: number;
+}
+
+export class SentimentAnalyzer {
+  private sentimentModel: tf.Sequential;
+  private tokenizer: any;
+
+  constructor() {
+    this.initializeModel();
+    this.tokenizer = new natural.WordTokenizer();
+  }
+
+  private initializeModel() {
+    this.sentimentModel = tf.sequential({
+      layers: [
+        tf.layers.embedding({
+          inputDim: 10000,
+          outputDim: 128,
+          inputLength: 100
+        }),
+        tf.layers.globalAveragePooling1d(),
+        tf.layers.dense({ units: 64, activation: 'relu' }),
+        tf.layers.dense({ units: 1, activation: 'sigmoid' })
+      ]
+    });
+
+    this.sentimentModel.compile({
+      optimizer: 'adam',
+      loss: 'binaryCrossentropy',
+      metrics: ['accuracy']
+    });
+  }
+
+  async analyzeSentiment(assets: string[]): Promise<SentimentSignal[]> {
+    const sources = [
+      this.fetchTwitterSentiment(assets),
+      this.fetchNewsSentiment(assets),
+      this.fetchForumSentiment(assets)
+    ];
+
+    const sentimentResults = await Promise.all(sources);
+    return this.aggregateSentimentSignals(sentimentResults);
+  }
+
+  private async fetchTwitterSentiment(assets: string[]) {
+    try {
+      const response = await axios.get('/api/sentiment/twitter', { 
+        params: { assets } 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Twitter Sentiment Fetch Error', error);
+      return [];
+    }
+  }
+
+  private async fetchNewsSentiment(assets: string[]) {
+    try {
+      const response = await axios.get('/api/sentiment/news', { 
+        params: { assets } 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('News Sentiment Fetch Error', error);
+      return [];
+    }
+  }
+
+  private async fetchForumSentiment(assets: string[]) {
+    try {
+      const response = await axios.get('/api/sentiment/forums', { 
+        params: { assets } 
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Forums Sentiment Fetch Error', error);
+      return [];
+    }
+  }
+
+  private aggregateSentimentSignals(sentimentResults: any[][]): SentimentSignal[] {
+    const flattenedResults = sentimentResults.flat();
+    
+    return flattenedResults.map(result => ({
+      asset: result.asset,
+      sentimentScore: this.calculateWeightedSentiment(result),
+      confidence: result.confidence || 0.5,
+      timestamp: Date.now()
+    }));
+  }
+
+  private calculateWeightedSentiment(result: any): number {
+    // Sophisticated sentiment scoring algorithm
+    const sourcePriorities = {
+      twitter: 0.3,
+      news: 0.4,
+      forums: 0.3
+    };
+
+    return result.score * sourcePriorities[result.source];
+  }
+
+  generateTradingSignals(sentimentSignals: SentimentSignal[]) {
+    return sentimentSignals.map(signal => ({
+      ...signal,
+      action: this.determineTradeAction(signal)
+    }));
+  }
+
+  private determineTradeAction(signal: SentimentSignal) {
+    if (signal.sentimentScore > 0.7) return 'BUY';
+    if (signal.sentimentScore < 0.3) return 'SELL';
+    return 'HOLD';
+  }
+}
+`
+    },
+    {
+      "path": "src/app/sentiment/page.tsx",
+      "content": `
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { PortfolioManager } from '@/lib/portfolio/portfolio-manager';
-import { PerformanceChart } from '@/components/PerformanceChart';
-import { RiskAssessmentWidget } from '@/components/RiskAssessmentWidget';
-import { RebalancingStrategySelector } from '@/components/RebalancingStrategySelector';
+import { SentimentAnalyzer } from '@/lib/sentiment/sentiment-analyzer';
 
-export default function PortfolioPage() {
-  const [portfolioData, setPortfolioData] = useState(null);
-  const [riskTolerance, setRiskTolerance] = useState(0.5);
+export default function SentimentTradingPage() {
+  const [sentimentSignals, setSentimentSignals] = useState([]);
+  const sentimentAnalyzer = new SentimentAnalyzer();
 
-  const portfolioManager = new PortfolioManager({
-    initialCapital: 100000,
-    riskTolerance: riskTolerance
-  });
+  const watchlistAssets = [
+    'AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA'
+  ];
 
   useEffect(() => {
-    const initializePortfolio = async () => {
-      const portfolio = await portfolioManager.initializePortfolio();
-      setPortfolioData(portfolio);
+    const fetchSentimentSignals = async () => {
+      const signals = await sentimentAnalyzer.analyzeSentiment(watchlistAssets);
+      const tradingSignals = sentimentAnalyzer.generateTradingSignals(signals);
+      setSentimentSignals(tradingSignals);
     };
 
-    initializePortfolio();
-  }, [riskTolerance]);
+    fetchSentimentSignals();
+    const intervalId = setInterval(fetchSentimentSignals, 15 * 60 * 1000);
 
-  const handleRebalance = async () => {
-    const rebalancedPortfolio = await portfolioManager.rebalancePortfolio();
-    setPortfolioData(rebalancedPortfolio);
-  };
+    return () => clearInterval(intervalId);
+  }, []);
 
   return (
-    <div className="container mx-auto p-6 bg-gray-50">
-      <h1 className="text-4xl font-bold mb-8">
-        AI Portfolio Management
+    <div className="container mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">
+        Sentiment Trading Signals
       </h1>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2">
-          <PerformanceChart portfolioData={portfolioData} />
-        </div>
-
-        <div className="space-y-6">
-          <RiskAssessmentWidget 
-            riskTolerance={riskTolerance}
-            onRiskChange={setRiskTolerance}
-          />
-          <RebalancingStrategySelector 
-            onRebalance={handleRebalance}
-          />
-        </div>
+      <div className="grid gap-4">
+        {sentimentSignals.map((signal, index) => (
+          <div 
+            key={index} 
+            className={`p-4 rounded ${
+              signal.action === 'BUY' 
+                ? 'bg-green-100' 
+                : signal.action === 'SELL' 
+                ? 'bg-red-100' 
+                : 'bg-gray-100'
+            }`}
+          >
+            <div className="flex justify-between">
+              <span className="font-bold">{signal.asset}</span>
+              <span>{signal.action}</span>
+            </div>
+            <div>
+              Sentiment Score: {signal.sentimentScore.toFixed(2)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 `
-    },
-    {
-      "path": "src/lib/portfolio/portfolio-manager.ts",
-      "content": `
-import { ModernPortfolioTheory } from './modern-portfolio-theory';
-import { MachineLearningPredictor } from './ml-predictor';
-import { TaxOptimizationStrategy } from './tax-optimization';
-
-interface PortfolioConfig {
-  initialCapital: number;
-  riskTolerance: number;
-}
-
-export class PortfolioManager {
-  private config: PortfolioConfig;
-  private mpt: ModernPortfolioTheory;
-  private mlPredictor: MachineLearningPredictor;
-  private taxOptimizer: TaxOptimizationStrategy;
-
-  constructor(config: PortfolioConfig) {
-    this.config = config;
-    this.mpt = new ModernPortfolioTheory(config.riskTolerance);
-    this.mlPredictor = new MachineLearningPredictor();
-    this.taxOptimizer = new TaxOptimizationStrategy();
-  }
-
-  async initializePortfolio() {
-    const assetPredictions = await this.mlPredictor.predictAssetPerformance();
-    const optimalAllocation = this.mpt.optimizeAllocation(assetPredictions);
-    
-    return {
-      allocation: optimalAllocation,
-      totalValue: this.config.initialCapital
-    };
-  }
-
-  async rebalancePortfolio() {
-    const currentPredictions = await this.mlPredictor.predictAssetPerformance();
-    const rebalancedAllocation = this.mpt.optimizeAllocation(currentPredictions);
-    
-    const taxOptimizedTrades = this.taxOptimizer.optimizeTrades(
-      rebalancedAllocation
-    );
-
-    return {
-      allocation: taxOptimizedTrades,
-      timestamp: Date.now()
-    };
-  }
-}
-`
-    },
-    {
-      "path": "src/lib/portfolio/ml-predictor.ts",
-      "content": `
-import * as tf from '@tensorflow/tfjs';
-import { fetchHistoricalData } from '@/utils/market-data';
-
-export class MachineLearningPredictor {
-  private model: tf.Sequential;
-
-  constructor() {
-    this.initializeModel();
-  }
-
-  private initializeModel() {
-    this.model = tf.sequential({
-      layers: [
-        tf.layers.dense({ 
-          inputShape: [10], 
-          units: 64, 
-          activation: 'relu' 
-        }),
-        tf.layers.dense({ 
-          units: 32, 
-          activation: 'relu' 
-        }),
-        tf.layers.dense({ 
-          units: 1, 
-          activation: 'linear' 
-        })
-      ]
-    });
-
-    this.model.compile({
-      optimizer: 'adam',
-      loss: 'meanSquaredError'
-    });
-  }
-
-  async predictAssetPerformance() {
-    const historicalData = await fetchHistoricalData();
-    const processedData = this.preprocessData(historicalData);
-
-    // Train and predict asset performance
-    await this.trainModel(processedData);
-
-    return this.generateAssetPredictions(processedData);
-  }
-
-  private preprocessData(data: any[]) {
-    // Advanced feature engineering
-    return data.map(asset => ({
-      ...asset,
-      engineeredFeatures: [
-        asset.volatility,
-        asset.momentum,
-        asset.correlation,
-        // More sophisticated features
-      ]
-    }));
-  }
-
-  private async trainModel(data: any[]) {
-    const xs = tf.tensor2d(data.map(d => d.engineeredFeatures));
-    const ys = tf.tensor2d(data.map(d => [d.expectedReturn]));
-    
-    await this.model.fit(xs, ys, {
-      epochs: 50,
-      batchSize: 32
-    });
-  }
-
-  private generateAssetPredictions(data: any[]) {
-    const predictions = data.map(asset => ({
-      symbol: asset.symbol,
-      predictedReturn: Math.random() * 0.1, // Placeholder
-      risk: Math.random() * 0.05
-    }));
-
-    return predictions;
-  }
-}
-`
     }
   ],
-  "summary": "Advanced Machine Learning Portfolio Rebalancing Engine with AI-powered asset allocation, modern portfolio theory optimization, and tax-efficient trading strategies."
+  "summary": "Advanced Sentiment-Based Trading Signal Generator using multi-source sentiment analysis, machine learning, and real-time trading signal generation with adaptive strategies."
 }
 
-Key Features of Machine Learning Portfolio Rebalancing Engine:
+Key Features of Sentiment Trading Signal Generator:
 
-1. AI-Powered Asset Allocation
-- Machine learning performance prediction
-- Dynamic portfolio optimization
-- Real-time market analysis
+1. Multi-Source Sentiment Analysis
+- Twitter sentiment tracking
+- News sentiment analysis
+- Financial forum sentiment monitoring
 
-2. Modern Portfolio Theory Integration
-- Risk-adjusted asset allocation
-- Advanced optimization algorithms
-- Customizable risk tolerance
-
-3. Machine Learning Predictive Model
+2. Machine Learning Sentiment Model
 - TensorFlow neural network
-- Historical data analysis
-- Advanced feature engineering
+- Natural language processing
+- Advanced feature extraction
 
-4. Tax-Efficient Trading
-- Optimization of trade execution
-- Minimizing tax implications
-- Strategic portfolio management
+3. Trading Signal Generation
+- Weighted sentiment scoring
+- Dynamic trade action recommendations
+- Continuous real-time updates
 
 Technologies:
 - Next.js 14
 - TypeScript
 - TensorFlow.js
-- Machine Learning
-- Modern Portfolio Theory
+- Natural Language Processing
+- Sentiment Analysis
 
 Recommended Enhancements:
-1. Implement more complex ML models
-2. Add comprehensive risk modeling
-3. Develop advanced feature extraction
-4. Create more granular asset classes
-5. Improve predictive accuracy
+1. Implement more sophisticated NLP techniques
+2. Add machine learning model training
+3. Create more granular sentiment scoring
+4. Develop advanced feature engineering
+5. Improve cross-source sentiment correlation
 
-The implementation provides an intelligent, adaptive approach to portfolio management using machine learning and modern financial techniques.
-
-Would you like me to elaborate on any specific aspect of the Machine Learning Portfolio Rebalancing Engine?
+This implementation provides an intelligent, adaptive approach to generating trading signals using advanced sentiment analysis techniques.
